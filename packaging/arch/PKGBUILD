@@ -68,7 +68,10 @@ check() {
 
 package() {
     cd "$srcdir/$_pkg_internal_name"
-    python -m installer --destdir="$pkgdir" dist/*.whl
+    # -P: don't prepend cwd to sys.path -- this tree ships its own
+    # installer/ (the USB bootstrap package), which otherwise shadows
+    # the pip "installer" package that provides `python -m installer`.
+    python -P -m installer --destdir="$pkgdir" dist/*.whl
 
     install -Dm644 password-manager.desktop \
         "$pkgdir/usr/share/applications/dev.ash.PasswordManager.desktop"

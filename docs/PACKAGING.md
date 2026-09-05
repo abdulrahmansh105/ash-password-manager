@@ -1,8 +1,62 @@
 # Packaging
 
-## Normal installation (the supported path)
+## The .run installer (the end-user install path)
 
-### Arch Linux
+`packaging/run-installer/` builds
+`ASH-Password-Manager-Installer.run` -- a single self-extracting shell
+script (built with `bash packaging/run-installer/build.sh`) that end
+users download from GitHub Releases and run directly. It needs no git
+clone, no `makepkg`, no `pipx`, no manually created virtual
+environment, and no manually installed Python packages. See the
+[README's Install section](../README.md#install) for what it does
+from the user's side.
+
+Internally it:
+
+1. Builds the project wheel (same `pyproject.toml` as every other
+   path below) and bundles it with `password-manager.desktop`, the
+   icon, the systemd `--user` agent unit, and `install.sh`
+   (`packaging/run-installer/install.sh`) into a gzipped tarball
+   appended to `packaging/run-installer/stub.sh`.
+2. At run time, the stub extracts that tarball to a temp directory and
+   hands off to `install.sh`, which asks for consent, creates a
+   per-user virtual environment with `python -m venv
+   --system-site-packages` (this is what correctly sidesteps Arch's
+   PEP 668 externally-managed-environment restriction -- a venv is
+   exempt from it, no `--break-system-packages` needed), `pip
+   install`s the bundled wheel into it (pulling `pykeepass`,
+   `argon2-cffi`, `pycryptodomex` from PyPI as normal), symlinks the
+   three entry points into `~/.local/bin`, installs the desktop entry
+   and icon, offers the optional background agent, and verifies
+   itself with `ash-password-manager version` / `ashpm version` before
+   launching `sign-in`.
+3. Detects an existing install (a manifest file under
+   `~/.local/share/ash-password-manager/`) and asks Update/Reinstall
+   instead of silently overwriting it; `--uninstall` (optionally
+   `--purge`) reverses everything it added, without ever touching a
+   vault, `.kdbx`, `Key.key`, or device slot.
+
+Rebuild it with:
+
+```bash
+bash packaging/run-installer/build.sh
+```
+
+which writes `dist/ASH-Password-Manager-Installer.run` and a
+version-suffixed copy for GitHub Releases
+(`dist/ASH-Password-Manager-<version>-Arch-<arch>.run`); it refuses to
+build if it finds any vault/personal-data pattern in the payload. The
+`.run` file itself is a build artifact -- like a wheel, it is never
+committed to the repository; it is attached to GitHub Releases only.
+
+## Other installation methods (developers, packagers, non-Arch)
+
+### Arch Linux, via the raw PKGBUILD
+
+`packaging/arch/PKGBUILD` is what the `.run` installer's wheel is
+built from, and remains fully usable standalone if you'd rather have
+pacman track the install -- it is not, itself, the end-user
+distribution artifact:
 
 ```bash
 cd packaging/arch

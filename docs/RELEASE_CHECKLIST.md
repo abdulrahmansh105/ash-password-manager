@@ -2,7 +2,7 @@
 
 ## Before every release
 
-- [ ] `python -m pytest -q` -- full suite green (506+ tests at time of
+- [ ] `python -m pytest -q` -- full suite green (549+ tests at time of
       writing; `pytest --collect-only -q | tail -1` to confirm the
       current count).
 - [ ] `git status` clean; nothing untracked that should be tracked (or
@@ -46,6 +46,28 @@
 - [ ] `pacman -Qi ash-password-manager` shows the expected version and
       dependencies (`python-argon2-cffi`, `python-pycryptodomex`
       included).
+
+## The .run installer (the end-user install path)
+
+- [ ] `bash packaging/run-installer/build.sh` succeeds and refuses to
+      build if it finds any vault/personal-data pattern in the payload.
+- [ ] In a scratch `$HOME` (never your real one): running the produced
+      `dist/ASH-Password-Manager-Installer.run` with no arguments asks
+      for consent and installs nothing if declined.
+- [ ] `./*.run --yes --no-agent` installs cleanly, `ash-password-manager
+      version` / `ashpm version` both succeed, the `.desktop` entry and
+      icon exist, and `ash-password-manager sign-in` launches.
+- [ ] Running it again against that same scratch `$HOME` detects the
+      existing install and offers Update/Reinstall instead of silently
+      overwriting it.
+- [ ] `./*.run --uninstall` removes the venv, symlinks, desktop entry,
+      icon, and systemd unit, but leaves any local settings/device
+      Local Keys in place; `--uninstall --purge` removes those too.
+      Neither ever touches a vault, `.kdbx`, `Key.key`, or slot.
+- [ ] Rename `dist/ASH-Password-Manager-Installer.run` to
+      `ASH-Password-Manager-X.Y.Z-Arch-x86_64.run` (or use the copy
+      `build.sh` already produces) and attach it to the GitHub Release
+      -- never commit the `.run` binary itself to the repository.
 
 ## Manual smoke test (see also the plan's own verification section)
 

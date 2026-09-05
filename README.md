@@ -172,47 +172,57 @@ is independently unit-tested without a display.
 
 ## Install
 
-### Arch Linux (recommended)
+**Arch Linux: download one file, run it.** No git clone, no `makepkg`,
+no `pipx`, no manually created virtual environment, no manually
+installed Python packages.
+
+1. Download the latest `ASH-Password-Manager-*-Arch-x86_64.run` from
+   [Releases](https://github.com/abdulrahmansh105/ash-password-manager/releases).
+2. Make it executable and run it:
 
 ```bash
-git clone https://github.com/abdulrahmansh105/ash-password-manager.git
-cd ash-password-manager/packaging/arch
-makepkg -si
+chmod +x ASH-Password-Manager-*-Arch-x86_64.run
+./ASH-Password-Manager-*-Arch-x86_64.run
 ```
 
-Builds and installs the package, its `.desktop` entry, icon, and the
-optional systemd `--user` agent unit, and runs the full test suite as
-part of the build. Upgrade by re-running `makepkg -si`; uninstall with
-`sudo pacman -R ash-password-manager`.
+It asks for explicit confirmation, then -- for your user only, never
+`sudo` -- creates a private virtual environment (correctly sidestepping
+Arch's externally-managed system Python), installs `pykeepass`,
+`argon2-cffi`, and `pycryptodomex` into it, links `ash-password-manager`
+/ `ashpm` / `ash-password-manager-agent` into `~/.local/bin` (added to
+your `PATH` automatically if it wasn't already there), installs the
+`.desktop` entry and icon, offers to set up the optional background
+agent, verifies itself with `ash-password-manager version` / `ashpm
+version`, and launches `ash-password-manager sign-in`.
 
-### Any other Linux distro (pip / pipx)
+It still expects GTK4, Libadwaita, `python-gobject`, and `udisks2` to
+already be on the system (these bind to native platform libraries and
+were almost certainly already pulled in by your desktop environment;
+the installer tells you the exact `pacman -S` command if anything is
+missing -- it never runs `pacman`/`sudo` itself).
 
-Not yet published to PyPI -- install straight from this repository.
-First make sure the GTK stack is present via your distro's package
-manager (it binds to native libraries and is not meaningfully
-installable via pip): `python-gobject`/`PyGObject`, `gtk4`,
-`libadwaita`, `udisks2`.
+Run it again any time to **update or reinstall** -- it detects an
+existing install and asks first, and never touches your vault, a
+`.kdbx` file, `Key.key`, or any device slot. To remove everything the
+installer added:
 
 ```bash
-pipx install "git+https://github.com/abdulrahmansh105/ash-password-manager.git" \
-  --system-site-packages   # reuses the system PyGObject/GTK4 instead of trying to build them
+./ASH-Password-Manager-*-Arch-x86_64.run --uninstall
 ```
 
-or with plain `pip` in a virtual environment:
+add `--purge` to also delete local settings and device Local Keys
+(never your vault -- that only ever lives on your USB). See
+`--help` for every flag (`--yes`, `--update`, `--no-agent`,
+`--no-launch`, ...).
 
-```bash
-python -m venv --system-site-packages .venv
-source .venv/bin/activate
-pip install "git+https://github.com/abdulrahmansh105/ash-password-manager.git"
-```
+The source for this installer is
+[`packaging/run-installer/`](packaging/run-installer/); build it
+yourself with `bash packaging/run-installer/build.sh`.
 
-Everything else (`pykeepass`, `argon2-cffi`, `pycryptodomex`) is a
-normal Python dependency and is pulled in automatically. Neither
-installation path installs, requires, or depends on KeePassXC. See
-[`docs/PACKAGING.md`](docs/PACKAGING.md) for upgrade/uninstall steps
-and building a wheel yourself.
+<details>
+<summary>Advanced / other install methods (developers, non-Arch, packagers)</summary>
 
-### From source, for development
+### From this repository, for development
 
 ```bash
 git clone https://github.com/abdulrahmansh105/ash-password-manager.git
@@ -222,6 +232,38 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 python -m pytest -q
 ```
+
+### pip / pipx, on any distro
+
+Not published to PyPI -- install straight from this repository. First
+make sure the GTK stack is present via your distro's package manager
+(it binds to native libraries and is not meaningfully installable via
+pip): `python-gobject`/`PyGObject`, `gtk4`, `libadwaita`, `udisks2`.
+
+```bash
+pipx install "git+https://github.com/abdulrahmansh105/ash-password-manager.git" \
+  --system-site-packages   # reuses the system PyGObject/GTK4 instead of trying to build them
+```
+
+### The Arch `PKGBUILD` directly
+
+`packaging/arch/PKGBUILD` is what the `.run` installer's wheel is
+built with, and is used in this project's own CI/release process --
+it is not itself meant to be the end-user install path, but it works
+standalone if you prefer pacman's own upgrade/uninstall tracking:
+
+```bash
+git clone https://github.com/abdulrahmansh105/ash-password-manager.git
+cd ash-password-manager/packaging/arch
+makepkg -si
+```
+
+Everything else (`pykeepass`, `argon2-cffi`, `pycryptodomex`) is a
+normal Python dependency pulled in automatically either way. No path
+here installs, requires, or depends on KeePassXC. See
+[`docs/PACKAGING.md`](docs/PACKAGING.md) for more detail.
+
+</details>
 
 ## Install from a USB (consent-based only)
 

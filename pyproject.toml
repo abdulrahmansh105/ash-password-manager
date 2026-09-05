@@ -7,7 +7,7 @@ name = "ash-password-manager"
 version = "0.2.0"
 description = "USB-first, device-bound Linux desktop password manager. A master password plus per-device Local Keys protect a portable KDBX vault; the USB carries no machine fingerprint."
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.11"
 authors = [{ name = "Ash" }]
 dependencies = [
