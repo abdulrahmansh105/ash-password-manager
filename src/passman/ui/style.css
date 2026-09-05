@@ -1,0 +1,79 @@
+/*
+ * Application-specific overrides on top of the user's active GTK theme.
+ *
+ * Same approach as password-template-generator: no colors are ever set
+ * here. DankMaterialShell already injects the live accent/surface/
+ * foreground colors into every GTK4 app via
+ * ~/.config/gtk-4.0/gtk.css (@accent_bg_color, @window_bg_color, ...),
+ * and Libadwaita widgets already consume those named colors. This file
+ * only adjusts shape and spacing, and updates automatically whenever
+ * DMS's theme changes (GTK re-reads gtk.css) -- no custom theme-reading
+ * code, no animations.
+ */
+
+/*
+ * Account picker: a vertical launcher/command-palette menu
+ * (Gtk.ListBox of Adw.ActionRow), not a card grid. Rows are flat and
+ * compact -- no card border-radius/shadow, no hover/selection
+ * animation (the app disables gtk-enable-animations globally; the
+ * selected/hover backgrounds below are instant theme-color fills, the
+ * same mechanism Adwaita already uses for every other list in the
+ * app -- nothing added here animates).
+ */
+.pm-account-menu {
+  background: none;
+}
+
+.pm-account-row {
+  min-height: 40px;
+}
+
+.pm-account-row .title {
+  font-weight: 600;
+}
+
+.pm-account-row .subtitle {
+  font-size: 0.82em;
+  opacity: 0.65;
+}
+
+/* Section header rows ("Suggested" / "Other accounts") are plain,
+   unselectable/unactivatable GtkListBoxRows -- suppress the row
+   hover/selected background GTK would otherwise still draw under the
+   pointer so they read as static dividers, not menu items. */
+row.pm-menu-header,
+row.pm-menu-header:hover,
+row.pm-menu-header:focus {
+  background: none;
+  box-shadow: none;
+}
+
+.pm-section-label {
+  font-weight: 600;
+  opacity: 0.75;
+  font-size: 0.85em;
+}
+
+.pm-error-label {
+  color: @error_color;
+  font-size: 0.85em;
+}
+
+.pm-hint-label {
+  opacity: 0.6;
+  font-size: 0.82em;
+}
+
+.pm-password-row {
+  font-family: monospace;
+}
+
+.pm-generate-button {
+  min-width: 120px;
+  min-height: 36px;
+  font-weight: 600;
+}
+
+entry {
+  padding: 8px 10px;
+}

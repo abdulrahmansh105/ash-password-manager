@@ -1,0 +1,88 @@
+# Maintainer: Ash <accounts@abdulrahmansh.com>
+pkgname=ash-password-manager
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="USB-first, device-bound Linux desktop password manager. A master password plus per-device Local Keys protect a portable KDBX vault; the USB carries no machine fingerprint."
+arch=('any')
+url="https://github.com/ash/ash-password-manager"
+license=('MIT')
+depends=(
+    'python'
+    'python-gobject'
+    'gtk4'
+    'libadwaita'
+    'python-pykeepass'
+    'python-argon2-cffi'
+    'python-pycryptodomex'
+    'wl-clipboard'
+    'udisks2'
+    'cryptsetup'
+    'util-linux'   # lsblk (fallback USB enumeration)
+)
+optdepends=(
+    'ydotool: global synthetic input for the optional autotype feature'
+    'at-spi2-core: precise, non-blind autotype via the accessibility tree (preferred over ydotool when available)'
+    'hyprland: native global-shortcut integration'
+    'zbar: import TOTP secrets from a QR code image file'
+    'xdg-desktop-portal: cross-desktop global-shortcut support outside Hyprland, where the compositor implementation supports it'
+)
+makedepends=('python-build' 'python-installer' 'python-wheel' 'python-setuptools')
+checkdepends=('python-pytest')
+source=()
+sha256sums=()
+backup=()
+
+# Packaged from the local source tree it lives in (packaging/arch/../..),
+# same pattern as password-template-generator -- no published release yet.
+# Build with `makepkg -si` from this directory.
+#
+# The public package NEVER contains a personal vault, key, or key
+# slot -- see .gitignore and docs/RELEASE_CHECKLIST.md. This prepare()
+# step only copies source, tests, assets, and packaging metadata.
+_project_root="$startdir/../.."
+_pkg_internal_name="password-manager"  # the source tree's own directory name; unrelated to pkgname
+
+prepare() {
+    rm -rf "$srcdir/$_pkg_internal_name"
+    mkdir -p "$srcdir/$_pkg_internal_name"
+    cp -r "$_project_root"/src "$srcdir/$_pkg_internal_name/"
+    cp -r "$_project_root"/tests "$srcdir/$_pkg_internal_name/"
+    cp -r "$_project_root"/assets "$srcdir/$_pkg_internal_name/"
+    cp "$_project_root"/pyproject.toml "$srcdir/$_pkg_internal_name/"
+    cp "$_project_root"/README.md "$srcdir/$_pkg_internal_name/"
+    cp "$_project_root"/LICENSE "$srcdir/$_pkg_internal_name/"
+    cp "$_project_root"/password-manager.desktop "$srcdir/$_pkg_internal_name/"
+    cp -r "$_project_root"/packaging/systemd "$srcdir/$_pkg_internal_name/"
+    cp -r "$_project_root"/installer "$srcdir/$_pkg_internal_name/"
+}
+
+build() {
+    cd "$srcdir/$_pkg_internal_name"
+    python -m build --wheel --no-isolation
+}
+
+check() {
+    cd "$srcdir/$_pkg_internal_name"
+    python -m pytest -q
+}
+
+package() {
+    cd "$srcdir/$_pkg_internal_name"
+    python -m installer --destdir="$pkgdir" dist/*.whl
+
+    install -Dm644 password-manager.desktop \
+        "$pkgdir/usr/share/applications/dev.ash.PasswordManager.desktop"
+    install -Dm644 assets/icons/password-manager.svg \
+        "$pkgdir/usr/share/icons/hicolor/scalable/apps/password-manager.svg"
+    install -Dm644 LICENSE \
+        "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 systemd/ash-password-manager-agent.service \
+        "$pkgdir/usr/lib/systemd/user/ash-password-manager-agent.service"
+    # A ready-to-copy USB install bootstrap (spec section 18) -- not
+    # placed on any vault USB automatically; see docs/PACKAGING.md for
+    # why (no wheel-bundling mechanism is implemented yet) and how a
+    # user or packager copies it themselves:
+    #   cp /usr/share/ash-password-manager/installer/bootstrap.py <usb>/install/
+    install -Dm755 installer/bootstrap.py \
+        "$pkgdir/usr/share/ash-password-manager/installer/bootstrap.py"
+}

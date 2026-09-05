@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ash-password-manager"
+version = "0.2.0"
+description = "USB-first, device-bound Linux desktop password manager. A master password plus per-device Local Keys protect a portable KDBX vault; the USB carries no machine fingerprint."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [{ name = "Ash" }]
+dependencies = [
+    "pykeepass>=4.0.7",
+    "argon2-cffi>=23.1",
+    "pycryptodomex>=3.19",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov"]
+
+[project.urls]
+Homepage = "https://github.com/ash/ash-password-manager"
+
+[project.scripts]
+ash-password-manager = "passman.cli.main:dispatch"
+ashpm = "passman.cli.main:dispatch"
+ash-password-manager-agent = "passman.launcher.agent:run_agent"
+# Kept for anyone already using the pre-rebrand names; identical
+# behavior, not deprecated on any timeline.
+password-manager = "passman.cli.main:dispatch"
+password-manager-launcher = "passman.launcher.daemon:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"passman.ui" = ["style.css"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

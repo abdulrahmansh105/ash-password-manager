@@ -1,0 +1,51 @@
+from .kdbx import (
+    EntryNotFoundError,
+    KdfUpgradeError,
+    VaultError,
+    VaultHandle,
+    VaultOpenError,
+    create_vault,
+    generate_keyfile,
+    open_vault,
+)
+from .models import (
+    CATEGORY_CHOICES,
+    CATEGORY_LABELS,
+    DEFAULT_CATEGORY,
+    AccountSecrets,
+    AccountSummary,
+    RecoveryCode,
+    normalize_category,
+)
+from .provisioning import (
+    ProvisionResult,
+    ProvisioningError,
+    VaultAlreadyExistsError,
+    adopt_existing_vault,
+    create_new_vault,
+    read_vault_json,
+)
+
+__all__ = [
+    "CATEGORY_CHOICES",
+    "CATEGORY_LABELS",
+    "DEFAULT_CATEGORY",
+    "normalize_category",
+    "AccountSecrets",
+    "AccountSummary",
+    "EntryNotFoundError",
+    "KdfUpgradeError",
+    "RecoveryCode",
+    "VaultError",
+    "VaultHandle",
+    "VaultOpenError",
+    "create_vault",
+    "generate_keyfile",
+    "open_vault",
+    "ProvisionResult",
+    "ProvisioningError",
+    "VaultAlreadyExistsError",
+    "adopt_existing_vault",
+    "create_new_vault",
+    "read_vault_json",
+]

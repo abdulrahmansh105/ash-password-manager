@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+demo/demo-vault/
+
+# Vault/credential material must never be committed (spec sections 17, 21).
+# None of this is ever written inside the project tree during normal use --
+# these patterns exist as a second, structural line of defense in case a
+# manual test or a future script ever does.
+*.kdbx
+*.kdbx.pre-ash-backup
+Key.key
+ash-pass-manager.key
+*.slot
+*.ashbak
+vault.json
+devices.json
+integrity.json
+usb.json
+settings.json
+ASH/
+metadata/
