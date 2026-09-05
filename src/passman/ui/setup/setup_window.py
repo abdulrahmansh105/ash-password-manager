@@ -388,6 +388,11 @@ class SetupWindow(Adw.ApplicationWindow):
         self._commit_vault()
 
     def _commit_vault(self) -> None:
+        if self._flow.state is not SetupState.LOCAL_KEY_OPTIONAL:
+            # Already committing (or already failed once and hasn't been
+            # reset yet) -- ignore a duplicate Skip/Generate Key click
+            # instead of crashing on an invalid state transition.
+            return
         self._flow.advance_to(SetupState.VAULT_CREATION)
         self._flow.advance_to(SetupState.DEVICE_REGISTRATION)
         self._nav.push(self._build_progress_page("Creating your vault…"))
@@ -444,6 +449,12 @@ class SetupWindow(Adw.ApplicationWindow):
         payload, error = result
         self._nav.pop()
         if error:
+            # create_new_vault/adopt_existing_vault guarantee zero
+            # on-disk trace on failure (see provisioning.py) -- rewind
+            # the in-memory wizard state to match, so the user can fix
+            # the actual problem (e.g. an unwritable USB) and retry
+            # from this same page instead of restarting the wizard.
+            self._flow.state = SetupState.LOCAL_KEY_OPTIONAL
             self._show_error(error)
             return
         self.result_handle, self.result_record = payload
