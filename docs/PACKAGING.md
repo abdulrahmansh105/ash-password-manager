@@ -29,8 +29,11 @@ pacman upgrade flow). Uninstall: `sudo pacman -R ash-password-manager`.
 
 ### Anywhere else (pipx / pip)
 
+Not published on PyPI yet -- install straight from GitHub:
+
 ```bash
-pipx install ash-password-manager
+pipx install "git+https://github.com/abdulrahmansh105/ash-password-manager.git" \
+  --system-site-packages
 ```
 
 or, from a built wheel:

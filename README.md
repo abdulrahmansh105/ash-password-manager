@@ -1,10 +1,24 @@
-# ASH Password Manager
+<p align="center">
+  <img src="assets/icons/password-manager.svg" width="96" height="96" alt="ASH Password Manager icon">
+</p>
 
-A USB-first, device-bound password manager for Linux desktops. Your
-vault lives on a USB drive you control; a master password protects it
-everywhere, and an optional per-device **Local Key** lets a specific
-computer unlock it without typing that password again -- without ever
-turning the Local Key into a portable credential.
+<h1 align="center">ASH Password Manager</h1>
+
+<p align="center">
+  A USB-first, device-bound password manager for Linux desktops.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
+  <img alt="Platform: Linux / Wayland" src="https://img.shields.io/badge/platform-Linux%20%2F%20Wayland-informational">
+  <img alt="Tests: 549 passing" src="https://img.shields.io/badge/tests-549%20passing-brightgreen">
+</p>
+
+Your vault lives on a USB drive you control; a master password protects
+it everywhere, and an optional per-device **Local Key** lets a
+specific computer unlock it without typing that password again --
+without ever turning the Local Key into a portable credential.
 
 ```
 USB connected, Local Key valid on this device -> Manager opens, no password asked
@@ -20,6 +34,24 @@ extension, no network dependency for normal operation.
 The public source and package ship no `Passwords.kdbx`, no `Key.key`,
 no key slots, and no Local Key. You create your own vault, on your own
 USB, during first-time setup -- see [Sign in](#sign-in--first-time-setup) below.
+
+## Contents
+
+- [The model, precisely](#the-model-precisely)
+- [Sign in / first-time setup](#sign-in--first-time-setup)
+- [Returning: Login](#returning-login)
+- [Architecture](#architecture)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Install from a USB (consent-based only)](#install-from-a-usb-consent-based-only)
+- [First run](#first-run)
+- [CLI](#cli)
+- [Testing](#testing)
+- [Demo vault](#demo-vault)
+- [Documentation](#documentation)
+- [Known limitations](#known-limitations)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## The model, precisely
 
@@ -113,7 +145,7 @@ src/passman/
   cli/                argparse CLI: sign-in/login/recover, devices, backup, agent, plus every
                        original subcommand, unchanged
 installer/            consent-based USB bootstrap (never auto-runs; see spec section 18)
-tests/                506 tests, fake data and synthetic fixtures only; several exercise the
+tests/                549 tests, fake data and synthetic fixtures only; several exercise the
                       real UDisks2/GlobalShortcuts-portal D-Bus services live where available
 demo/                 create_demo_vault.py -- builds + validates a fully fake demo vault
 docs/                 SECURITY, ARCHITECTURE, THREAT_MODEL, USB_SETUP, BACKUP_RECOVERY,
@@ -140,17 +172,56 @@ is independently unit-tested without a display.
 
 ## Install
 
+### Arch Linux (recommended)
+
 ```bash
-cd packaging/arch && makepkg -si      # Arch
-```
-or
-```bash
-pipx install ash-password-manager     # anywhere with the deps above installed
+git clone https://github.com/abdulrahmansh105/ash-password-manager.git
+cd ash-password-manager/packaging/arch
+makepkg -si
 ```
 
-Neither path installs, requires, or depends on KeePassXC. See
-[`docs/PACKAGING.md`](docs/PACKAGING.md) for full instructions,
-upgrade/uninstall steps, and the non-Arch path in more detail.
+Builds and installs the package, its `.desktop` entry, icon, and the
+optional systemd `--user` agent unit, and runs the full test suite as
+part of the build. Upgrade by re-running `makepkg -si`; uninstall with
+`sudo pacman -R ash-password-manager`.
+
+### Any other Linux distro (pip / pipx)
+
+Not yet published to PyPI -- install straight from this repository.
+First make sure the GTK stack is present via your distro's package
+manager (it binds to native libraries and is not meaningfully
+installable via pip): `python-gobject`/`PyGObject`, `gtk4`,
+`libadwaita`, `udisks2`.
+
+```bash
+pipx install "git+https://github.com/abdulrahmansh105/ash-password-manager.git" \
+  --system-site-packages   # reuses the system PyGObject/GTK4 instead of trying to build them
+```
+
+or with plain `pip` in a virtual environment:
+
+```bash
+python -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install "git+https://github.com/abdulrahmansh105/ash-password-manager.git"
+```
+
+Everything else (`pykeepass`, `argon2-cffi`, `pycryptodomex`) is a
+normal Python dependency and is pulled in automatically. Neither
+installation path installs, requires, or depends on KeePassXC. See
+[`docs/PACKAGING.md`](docs/PACKAGING.md) for upgrade/uninstall steps
+and building a wheel yourself.
+
+### From source, for development
+
+```bash
+git clone https://github.com/abdulrahmansh105/ash-password-manager.git
+cd ash-password-manager
+python -m venv --system-site-packages .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+python -m pytest -q
+```
 
 ## Install from a USB (consent-based only)
 
@@ -209,7 +280,7 @@ source .venv/bin/activate
 python -m pytest -q
 ```
 
-506 tests: the original template engine/random generator/TOTP/
+549 tests: the original template engine/random generator/TOTP/
 recovery-codes/config-store/USB-identity/Safety-Guard/login-strategy/
 input-backend/session/Hyprland-integration/no-network-import suite
 (all still green, none rewritten), plus new coverage for the key-slot
@@ -232,6 +303,22 @@ Creates a throwaway, fully fake KDBX4 vault (see the script for exact
 fabricated data) and re-opens it through the same code path the real
 application uses. Never point this at a real vault location.
 
+## Documentation
+
+| Doc | Covers |
+| --- | --- |
+| [`docs/SECURITY.md`](docs/SECURITY.md) | What is a cryptographic guarantee vs. application policy |
+| [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) | What this design does and does not defend against |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Credential architecture, key-slot format, state machines |
+| [`docs/USB_SETUP.md`](docs/USB_SETUP.md) | Full first-time setup walkthrough |
+| [`docs/BACKUP_RECOVERY.md`](docs/BACKUP_RECOVERY.md) | Encrypted backup/restore and disaster recovery |
+| [`docs/INPUT_BACKENDS.md`](docs/INPUT_BACKENDS.md) | AT-SPI / ydotool / clipboard autotype backends |
+| [`docs/PACKAGING.md`](docs/PACKAGING.md) | Install/upgrade/uninstall, building a release artifact |
+| [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) | Non-secret local settings |
+| [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Common problems and fixes |
+| [`docs/MIGRATION.md`](docs/MIGRATION.md) | Migrating from the original single-vault design |
+| [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) | What to verify before cutting a release |
+
 ## Known limitations
 
 See [`docs/SECURITY.md`](docs/SECURITY.md) and
@@ -248,6 +335,21 @@ a disclosed, optional exception to "nothing resident while locked",
 scoped so that compromising it can only spawn the sign-in UI, never
 expose a secret it never held.
 
+## Contributing
+
+Issues and pull requests are welcome. Before opening a PR:
+
+```bash
+source .venv/bin/activate
+python -m pytest -q
+```
+
+Please keep the invariants in [`docs/SECURITY.md`](docs/SECURITY.md)
+and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) intact -- in
+particular, nothing in `core/` may gain a GTK dependency, and no
+change may introduce a network dependency for normal operation or a
+path that persists a secret outside the KDBX/key-slot format.
+
 ## License
 
-MIT, see `LICENSE`.
+MIT, see [`LICENSE`](LICENSE).

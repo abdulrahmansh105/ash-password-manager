@@ -4,7 +4,7 @@ pkgver=0.2.0
 pkgrel=1
 pkgdesc="USB-first, device-bound Linux desktop password manager. A master password plus per-device Local Keys protect a portable KDBX vault; the USB carries no machine fingerprint."
 arch=('any')
-url="https://github.com/ash/ash-password-manager"
+url="https://github.com/abdulrahmansh105/ash-password-manager"
 license=('MIT')
 depends=(
     'python'

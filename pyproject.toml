@@ -20,7 +20,8 @@ dependencies = [
 dev = ["pytest", "pytest-cov"]
 
 [project.urls]
-Homepage = "https://github.com/ash/ash-password-manager"
+Homepage = "https://github.com/abdulrahmansh105/ash-password-manager"
+Issues = "https://github.com/abdulrahmansh105/ash-password-manager/issues"
 
 [project.scripts]
 ash-password-manager = "passman.cli.main:dispatch"
