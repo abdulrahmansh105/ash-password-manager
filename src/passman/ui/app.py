@@ -18,20 +18,23 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
-from ..config.store import Settings, UsbRegistration, load_settings  # noqa: E402
-from ..core.auth.detection import DetectedContext  # noqa: E402
-from ..core.security.logging import get_logger, safe_extra  # noqa: E402
-from ..core.security.session import LockReason, Session  # noqa: E402
-from ..core.vault.kdbx import VaultOpenError, open_vault  # noqa: E402
-from ..integration.logind import LogindWatcher  # noqa: E402
-from ..integration import notify  # noqa: E402
-from ..integration.usb.identity import evaluate_usb_status, should_lock_for_usb_removal  # noqa: E402
-from ..integration.usb.udisks import UdisksError, list_block_devices  # noqa: E402
-from ..launcher.ipc import ControlServer, status_json  # noqa: E402
-from .launcher_window import AccountPickerWindow  # noqa: E402
-from .locked_window import LockedWindow  # noqa: E402
+from ..config.store import Settings, UsbRegistration, load_settings
+from ..core.auth.detection import DetectedContext
+from ..core.security.logging import get_logger, safe_extra
+from ..core.security.session import LockReason, Session
+from ..core.vault.kdbx import VaultOpenError, open_vault
+from ..integration import notify
+from ..integration.logind import LogindWatcher
+from ..integration.usb.identity import (
+    evaluate_usb_status,
+    should_lock_for_usb_removal,
+)
+from ..integration.usb.udisks import UdisksError, list_block_devices
+from ..launcher.ipc import ControlServer, status_json
+from .launcher_window import AccountPickerWindow
+from .locked_window import LockedWindow
 
 APP_ID = "dev.ash.PasswordManager"
 _log = get_logger(__name__)

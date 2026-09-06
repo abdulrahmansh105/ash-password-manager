@@ -14,7 +14,8 @@ state), never to loop or retry unprompted.
 from __future__ import annotations
 
 from ...integration.usb import udisks2 as u2
-from ...integration.usb.udisks import mount as udisks_mount, unlock as udisks_unlock
+from ...integration.usb.udisks import mount as udisks_mount
+from ...integration.usb.udisks import unlock as udisks_unlock
 from ..vaults.registry import VaultRecord
 
 

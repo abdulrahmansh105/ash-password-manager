@@ -12,23 +12,29 @@ from .login_machine import (
 )
 from .setup_machine import InvalidTransitionError, SetupDraft, SetupFlow, SetupState
 from .usb_login_lookup import find_and_mount_vault, find_connected_vault
-from .usb_setup import SetupUsbError, UsbIdentity, detect_container_kind, pick_usable_block, prepare_mountpoint
+from .usb_setup import (
+    SetupUsbError,
+    UsbIdentity,
+    detect_container_kind,
+    pick_usable_block,
+    prepare_mountpoint,
+)
 
 __all__ = [
+    "InvalidTransitionError",
     "LoginFailureReason",
     "LoginFlow",
     "LoginOutcome",
     "LoginState",
-    "attempt_automatic_login",
-    "InvalidTransitionError",
     "SetupDraft",
     "SetupFlow",
     "SetupState",
-    "find_and_mount_vault",
-    "find_connected_vault",
     "SetupUsbError",
     "UsbIdentity",
+    "attempt_automatic_login",
     "detect_container_kind",
+    "find_and_mount_vault",
+    "find_connected_vault",
     "pick_usable_block",
     "prepare_mountpoint",
 ]

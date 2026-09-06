@@ -28,20 +28,40 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib  # noqa: E402
+from gi.repository import Adw
 
 from ..core.security.logging import get_logger, safe_extra
 from ..core.vaults.registry import load_vaults
-from ..integration.usb.udisks2 import Udisks2Monitor, Udisks2Unavailable, new_client, snapshot_from_client
+from ..integration.usb.udisks2 import (
+    Udisks2Monitor,
+    Udisks2Unavailable,
+    new_client,
+    snapshot_from_client,
+)
 from .usb_watch_logic import compute_newly_connected_vaults
 
 _log = get_logger(__name__)
-_SIGN_IN_CMD = ["ash-password-manager", "sign-in"]
+
+
+def _sign_in_command() -> list[str]:
+    """The console-script installed right next to this very interpreter
+    (present regardless of whether this runs from a private venv, as
+    ``packaging/run-installer`` installs it, or from a system
+    site-packages install, as ``packaging/arch/PKGBUILD`` installs it)
+    is used in preference to a bare ``PATH`` lookup -- confirmed live:
+    a systemd ``--user`` unit's ``PATH`` never includes ``~/.local/bin``,
+    where the venv installer places this command, so
+    ``subprocess.Popen(["ash-password-manager", ...])`` silently raised
+    ``FileNotFoundError`` on every real USB insertion, logged as "could
+    not spawn sign-in" and never actually opening the Login window."""
+    sibling = Path(sys.executable).parent / "ash-password-manager"
+    return [str(sibling) if sibling.is_file() else "ash-password-manager", "sign-in"]
 
 
 class UsbWatchAgent:
@@ -104,7 +124,7 @@ class UsbWatchAgent:
 
     def _spawn_sign_in(self) -> None:
         try:
-            subprocess.Popen(_SIGN_IN_CMD, start_new_session=True)  # noqa: S603 - fixed argv, no user input
+            subprocess.Popen(_sign_in_command(), start_new_session=True)
         except OSError:
             _log.warning("could not spawn sign-in", extra=safe_extra(event="agent_spawn_failed"))
 

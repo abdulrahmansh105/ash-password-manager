@@ -52,7 +52,7 @@ class BlockDevice:
     fstype: str | None
     type: str
     mountpoint: str | None
-    children: tuple["BlockDevice", ...] = field(default_factory=tuple)
+    children: tuple[BlockDevice, ...] = field(default_factory=tuple)
 
     def walk(self):
         yield self

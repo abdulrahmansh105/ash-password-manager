@@ -22,8 +22,8 @@ D-Bus/UDisks2 connection (see ``tests/test_udisks2.py``).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from .identity import BlockDevice
 
@@ -240,7 +240,7 @@ def new_client():
         raise Udisks2Unavailable("UDisks2 GObject-Introspection typelib is not available.") from exc
     try:
         return UDisks.Client.new_sync(None)
-    except Exception as exc:  # noqa: BLE001 - any D-Bus failure means unavailable, not a crash
+    except Exception as exc:
         raise Udisks2Unavailable(f"Could not connect to UDisks2: {type(exc).__name__}") from exc
 
 

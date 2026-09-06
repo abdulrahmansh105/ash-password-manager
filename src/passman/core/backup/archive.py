@@ -62,7 +62,7 @@ class BackupWrongPassphraseError(BackupError):
 
 
 def _aad() -> bytes:
-    return f"ash-pm/backup/v{ARCHIVE_VERSION}".encode("utf-8")
+    return f"ash-pm/backup/v{ARCHIVE_VERSION}".encode()
 
 
 def _b64(data: bytes) -> str:

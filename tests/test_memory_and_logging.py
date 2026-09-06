@@ -7,7 +7,12 @@ import logging
 
 import pytest
 
-from passman.core.security.logging import UnsafeLogFieldError, redact_identifier, safe_extra, scrub_argv
+from passman.core.security.logging import (
+    UnsafeLogFieldError,
+    redact_identifier,
+    safe_extra,
+    scrub_argv,
+)
 from passman.core.security.memory import SecretBytes
 
 FAKE_SECRET = "fake-super-secret-abc123"

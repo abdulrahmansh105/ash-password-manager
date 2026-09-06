@@ -24,7 +24,8 @@ from ..config.store import load_usb_registration
 from ..core.auth.detection import get_active_window_context
 from ..integration.hyprland.keybind import register_runtime_bind
 from ..integration.usb.identity import UsbState, evaluate_usb_status
-from ..integration.usb.udisks import UdisksError, list_block_devices, mount as udisks_mount
+from ..integration.usb.udisks import UdisksError, list_block_devices
+from ..integration.usb.udisks import mount as udisks_mount
 from .ipc import send_command
 
 SHOW_COMMAND = "password-manager show"

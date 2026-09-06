@@ -22,7 +22,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, GLib, Gtk
 
 from ..core.accounts.repository import rank_by_context, search, suggested_and_other
 from ..core.auth.async_login import run_login_async

@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
-
 from passman.input.backend import InputResult
 from passman.input.clipboard_backend import ClipboardPasteBackend
 from passman.input.ydotool_backend import YdotoolBackend
@@ -23,7 +21,7 @@ def _fake_completed(returncode=0):
 def test_ydotool_type_never_passes_secret_as_argv(monkeypatch):
     captured = {}
 
-    def fake_run(args, input=None, **kwargs):  # noqa: A002
+    def fake_run(args, input=None, **kwargs):
         captured["args"] = args
         captured["input"] = input
         return _fake_completed(0)

@@ -61,7 +61,7 @@ class Argon2Params:
         }
 
     @staticmethod
-    def from_dict(d: dict) -> "Argon2Params":
+    def from_dict(d: dict) -> Argon2Params:
         return Argon2Params(
             time_cost=int(d["time_cost"]),
             memory_cost_kib=int(d["memory_cost_kib"]),

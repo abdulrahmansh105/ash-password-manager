@@ -6,7 +6,11 @@ from __future__ import annotations
 
 import pytest
 
-from passman.core.flows.setup_machine import InvalidTransitionError, SetupFlow, SetupState
+from passman.core.flows.setup_machine import (
+    InvalidTransitionError,
+    SetupFlow,
+    SetupState,
+)
 
 
 def test_initial_state_is_first_run():

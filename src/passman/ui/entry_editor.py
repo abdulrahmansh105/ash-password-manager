@@ -16,12 +16,17 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk  # noqa: E402
+from gi.repository import Adw, Gtk
 
 from ..core.auth.async_login import run_blocking_async
 from ..core.generator import RandomPasswordPolicy, generate_random_password
 from ..core.recovery.codes import RecoveryCode
-from ..core.totp.totp import InvalidTotpSecretError, TotpConfig, generate_totp, normalize_base32_secret
+from ..core.totp.totp import (
+    InvalidTotpSecretError,
+    TotpConfig,
+    generate_totp,
+    normalize_base32_secret,
+)
 from ..core.vault.models import CATEGORY_CHOICES, CATEGORY_LABELS, DEFAULT_CATEGORY
 
 

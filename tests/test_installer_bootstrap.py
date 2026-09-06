@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from installer import bootstrap  # noqa: E402
+from installer import bootstrap
 
 
 def test_default_scope_is_never_system(monkeypatch):

@@ -26,23 +26,43 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
-from ...config.store import load_settings, save_settings  # noqa: E402
-from ...core.auth.async_login import run_blocking_async  # noqa: E402
-from ...core.crypto.keyslots import vms_to_kdbx_password  # noqa: E402
-from ...core.devices.registry import unlock_with_password  # noqa: E402
-from ...core.flows.setup_machine import SetupFlow, SetupState  # noqa: E402
-from ...core.flows.usb_setup import SetupUsbError, discover_container, prepare_mountpoint  # noqa: E402
-from ...core.security.memory import SecretBytes  # noqa: E402
-from ...core.security.password_strength import MIN_LENGTH, estimate_password_strength  # noqa: E402
-from ...core.vault.kdbx import VaultHandle, VaultOpenError, open_vault  # noqa: E402
-from ...core.vault.provisioning import ProvisioningError, adopt_existing_vault, create_new_vault, read_vault_json  # noqa: E402
-from ...core.vaults.layout import VaultLayout  # noqa: E402
-from ...core.vaults.registry import VaultRecord, add_vault  # noqa: E402
-from ...integration.shortcuts import select_and_bind  # noqa: E402
-from ...integration.usb.udisks2 import Udisks2Unavailable, list_removable_drive_choices  # noqa: E402
-from ..widgets import accelerator_display_label, build_brand_header, build_local_key_offer_content, build_step_dots  # noqa: E402
+from ...config.store import load_settings, save_settings
+from ...core.auth.async_login import run_blocking_async
+from ...core.crypto.keyslots import vms_to_kdbx_password
+from ...core.devices.registry import unlock_with_password
+from ...core.flows.setup_machine import SetupFlow, SetupState
+from ...core.flows.usb_setup import (
+    SetupUsbError,
+    discover_container,
+    prepare_mountpoint,
+)
+from ...core.security.memory import SecretBytes
+from ...core.security.password_strength import (
+    MIN_LENGTH,
+    estimate_password_strength,
+)
+from ...core.vault.kdbx import VaultHandle, VaultOpenError, open_vault
+from ...core.vault.provisioning import (
+    ProvisioningError,
+    adopt_existing_vault,
+    create_new_vault,
+    read_vault_json,
+)
+from ...core.vaults.layout import VaultLayout
+from ...core.vaults.registry import VaultRecord, add_vault
+from ...integration.shortcuts import select_and_bind
+from ...integration.usb.udisks2 import (
+    Udisks2Unavailable,
+    list_removable_drive_choices,
+)
+from ..widgets import (
+    accelerator_display_label,
+    build_brand_header,
+    build_local_key_offer_content,
+    build_step_dots,
+)
 
 APP_ID = "dev.ash.PasswordManager.Setup"
 _STEP_COUNT = 6
@@ -56,7 +76,7 @@ _IGNORED_CAPTURE_KEYVALS = {
 
 
 class SetupWindow(Adw.ApplicationWindow):
-    def __init__(self, app: "SetupApp") -> None:
+    def __init__(self, app: SetupApp) -> None:
         super().__init__(application=app, default_width=460, default_height=580, title="ASH Password Manager")
         self._flow = SetupFlow()
         self.result_handle: VaultHandle | None = None

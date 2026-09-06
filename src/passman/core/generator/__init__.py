@@ -10,7 +10,11 @@ from .errors import (
     TemplateSyntaxError,
     UnknownPlaceholderError,
 )
-from .random_generator import PolicyError, RandomPasswordPolicy, generate_random_password
+from .random_generator import (
+    PolicyError,
+    RandomPasswordPolicy,
+    generate_random_password,
+)
 from .template_engine import (
     PLACEHOLDERS,
     ResolveContext,

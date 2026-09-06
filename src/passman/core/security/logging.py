@@ -18,6 +18,8 @@ import os
 import re
 from pathlib import Path
 
+from ..appdirs import state_home
+
 _LOG_DIR_MODE = 0o700
 _LOG_FILE_MODE = 0o600
 
@@ -45,9 +47,7 @@ class UnsafeLogFieldError(Exception):
 
 
 def log_dir() -> Path:
-    xdg = os.environ.get("XDG_STATE_HOME")
-    base = Path(xdg) if xdg else Path.home() / ".local" / "state"
-    return base / "password-manager"
+    return state_home()
 
 
 def redact_identifier(value: str, keep: int = 2) -> str:
@@ -101,7 +101,7 @@ _configured = False
 
 def get_logger(name: str) -> logging.Logger:
     """Return a module logger writing to
-    ``$XDG_STATE_HOME/password-manager/passman.log`` with restrictive
+    ``$XDG_STATE_HOME/ash-password-manager/passman.log`` with restrictive
     permissions. Configured once per process."""
     global _configured
     logger = logging.getLogger(name)

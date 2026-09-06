@@ -8,9 +8,16 @@ docstring for the exact, honestly-reported result)."""
 
 from __future__ import annotations
 
-from passman.integration.shortcuts.backend import BindOutcome, BindResult, ShortcutBackend
+from passman.integration.shortcuts.backend import (
+    BindOutcome,
+    BindResult,
+    ShortcutBackend,
+)
 from passman.integration.shortcuts.gnome import GnomeShortcutBackend
-from passman.integration.shortcuts.hyprland import HyprlandShortcutBackend, _accelerator_to_hyprland
+from passman.integration.shortcuts.hyprland import (
+    HyprlandShortcutBackend,
+    _accelerator_to_hyprland,
+)
 from passman.integration.shortcuts.manual import ManualShortcutBackend
 from passman.integration.shortcuts.portal import PortalShortcutBackend
 

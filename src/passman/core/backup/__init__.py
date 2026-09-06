@@ -15,8 +15,8 @@ from .archive import (
 
 __all__ = [
     "ARCHIVE_SUFFIX",
-    "BackupError",
     "BackupCorruptError",
+    "BackupError",
     "BackupWrongPassphraseError",
     "backup_filename",
     "create_backup",

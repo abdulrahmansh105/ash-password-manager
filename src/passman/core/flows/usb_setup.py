@@ -52,7 +52,8 @@ def prepare_mountpoint(drive_object_path: str, drive_vendor: str, drive_model: s
     Runs real, blocking I/O -- callers must run this off the GTK main
     thread (see ``ui.setup``, which wraps it in ``run_blocking_async``)."""
     from ...integration.usb import udisks2 as u2
-    from ...integration.usb.udisks import mount as udisks_mount, unlock as udisks_unlock
+    from ...integration.usb.udisks import mount as udisks_mount
+    from ...integration.usb.udisks import unlock as udisks_unlock
 
     client = u2.new_client()
     _drives, blocks = u2.snapshot_from_client(client)

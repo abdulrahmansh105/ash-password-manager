@@ -14,6 +14,7 @@ from passman.core.devices import local_key
 from passman.core.devices.registry import (
     DeviceRevokedError,
     NoLocalKeyError,
+    VaultUnreadableError,
     change_master_password,
     register_device,
     revoke_device,
@@ -51,6 +52,51 @@ def test_unlock_with_password_wrong_password_fails(fake_usb):
     _bootstrap_vault(layout, vms)
     with pytest.raises(keyslots.SlotUnwrapError):
         unlock_with_password(layout, SecretBytes("wrong-password"))
+
+
+def test_unlock_with_password_unreadable_slot_is_not_reported_as_wrong_password(fake_usb):
+    """Regression test for a real, live bug: a vault whose container
+    directory ends up unreadable by the OS user running the app (on
+    the reporting machine, the vault's ``ASH`` directory was owned by
+    a different Linux account than the one logging in) made
+    ``read_slot`` raise a generic error indistinguishable from "wrong
+    password" -- so the objectively correct master password was
+    rejected every time, because it was never actually compared.
+    Reproduced here with a plain permission bit rather than a second
+    OS user, which is enough to exercise the exact same code path
+    (``read_slot``'s ``except OSError`` branch): ``unlock_with_password``
+    must raise ``VaultUnreadableError``, distinct from
+    ``keyslots.SlotUnwrapError``, even though the password supplied
+    here is the genuinely correct one."""
+    layout = VaultLayout.at(str(fake_usb), "ASH")
+    vms = keyslots.generate_vms()
+    _bootstrap_vault(layout, vms)
+
+    slot_path = layout.keyslot_path(keyslots.PASSWORD_SLOT_ID)
+    slot_path.chmod(0o000)
+    try:
+        with pytest.raises(VaultUnreadableError):
+            unlock_with_password(layout, SecretBytes("master-password"))  # the genuinely correct password
+    finally:
+        slot_path.chmod(0o600)  # restore so the fixture's own teardown can clean up
+
+    # Once readable again, the same correct password works normally --
+    # proving the failure above was about the file, never the password.
+    recovered = unlock_with_password(layout, SecretBytes("master-password"))
+    assert recovered.to_bytes() == vms.to_bytes()
+
+
+def test_unlock_with_password_missing_slot_is_still_the_old_generic_error(fake_usb):
+    """A slot that simply does not exist (never enrolled/broken vault)
+    is a different, legitimate case from an unreadable one -- must
+    stay a plain ``DeviceRegistryError``, not ``VaultUnreadableError``."""
+    from passman.core.devices.registry import DeviceRegistryError
+
+    layout = VaultLayout.at(str(fake_usb), "ASH")
+    layout.ensure_dirs()
+    with pytest.raises(DeviceRegistryError) as exc_info:
+        unlock_with_password(layout, SecretBytes("anything"))
+    assert not isinstance(exc_info.value, VaultUnreadableError)
 
 
 def test_register_device_creates_local_key_and_slot(fake_usb, isolated_xdg, no_secret_service):

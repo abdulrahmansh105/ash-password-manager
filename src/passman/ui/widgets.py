@@ -11,7 +11,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk  # noqa: E402
+from gi.repository import Gtk
 
 
 def accelerator_display_label(accelerator: str) -> str:

@@ -13,7 +13,7 @@ still works exactly as it always did for anyone still using it.
 from __future__ import annotations
 
 from ..core.auth.detection import DetectedContext, get_active_window_context
-from ..core.flows.usb_login_lookup import find_and_mount_vault, find_connected_vault
+from ..core.flows.usb_login_lookup import find_connected_vault
 from ..core.security.logging import get_logger, safe_extra
 from ..core.vaults.registry import VaultRecord, load_vaults
 from ..integration.hyprland import keybind as hypr_keybind

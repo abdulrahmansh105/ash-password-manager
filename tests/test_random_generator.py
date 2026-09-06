@@ -4,7 +4,11 @@ import string
 
 import pytest
 
-from passman.core.generator import PolicyError, RandomPasswordPolicy, generate_random_password
+from passman.core.generator import (
+    PolicyError,
+    RandomPasswordPolicy,
+    generate_random_password,
+)
 
 
 def test_default_policy_length():

@@ -11,11 +11,15 @@ and has no GTK/UI dependency.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import asdict, dataclass
 
 from ..crypto import keyslots
-from ..crypto.keyslots import KeySlot, SlotUnwrapError  # noqa: F401 - re-exported for callers
+from ..crypto.keyslots import (  # noqa: F401 - re-exported for callers
+    KeySlot,
+    SlotUnwrapError,
+)
 from ..security.memory import SecretBytes
 from ..util.atomic_json import read_json, write_json_atomic
 from ..vaults import health
@@ -28,16 +32,17 @@ __all__ = [
     "DeviceRegistryError",
     "DeviceRevokedError",
     "NoLocalKeyError",
-    "read_slot",
-    "write_slot",
-    "read_devices",
-    "write_devices",
+    "VaultUnreadableError",
+    "change_master_password",
     "list_devices",
+    "read_devices",
+    "read_slot",
     "register_device",
+    "revoke_device",
     "unlock_with_local_key",
     "unlock_with_password",
-    "revoke_device",
-    "change_master_password",
+    "write_devices",
+    "write_slot",
 ]
 
 
@@ -53,6 +58,20 @@ class NoLocalKeyError(DeviceRegistryError):
     """No Local Key is enrolled for this device on this vault -- a
     normal, expected state (spec section 27: falls through to the
     password), not a corruption."""
+
+
+class VaultUnreadableError(DeviceRegistryError):
+    """The key slot exists on disk but could not even be read (e.g. a
+    permission error, or the vault's own container directory owned by
+    a different OS user than the one currently logging in -- confirmed
+    live: a portable USB vault set up under one Linux account and then
+    used from another is unreadable by that second account entirely).
+
+    Deliberately distinct from a plain ``DeviceRegistryError`` ("no
+    such slot", a legitimate "not enrolled" state) and from
+    ``core.crypto.keyslots.SlotUnwrapError`` (an actual wrong
+    password) -- callers must never fold this into "Incorrect
+    password": the password was never even compared."""
 
 
 @dataclass
@@ -96,9 +115,23 @@ def list_devices(layout: VaultLayout) -> list[DeviceRecord]:
 
 
 def read_slot(layout: VaultLayout, slot_id: str) -> KeySlot:
-    raw = read_json(layout.keyslot_path(slot_id), None)
-    if raw is None:
-        raise DeviceRegistryError(f"Key slot not found: {slot_id}")
+    """Deliberately does not go through ``util.atomic_json.read_json``
+    -- that helper folds a missing file and an unreadable one (wrong
+    permissions, a stale mount, an I/O error) into the same "use the
+    default" outcome, which is the right call for a settings file that
+    may legitimately not exist yet, but wrong here: a key slot that
+    exists but can't be read must never look like "not enrolled",
+    because every caller (in particular ``unlock_with_password``)
+    otherwise cannot be told apart from an actual wrong password."""
+    path = layout.keyslot_path(slot_id)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        raise DeviceRegistryError(f"Key slot not found: {slot_id}") from None
+    except OSError as exc:
+        raise VaultUnreadableError(f"Key slot {slot_id!r} exists but could not be read: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise DeviceRegistryError(f"Key slot {slot_id!r} is corrupt: {exc}") from exc
     return KeySlot.from_dict(raw)
 
 
@@ -110,10 +143,13 @@ def write_slot(layout: VaultLayout, slot: KeySlot) -> None:
 
 def unlock_with_password(layout: VaultLayout, password: SecretBytes) -> SecretBytes:
     """Spec section 27's ASK_PASSWORD -> OPEN_VAULT path. Raises
-    ``SlotUnwrapError`` (incorrect password) or ``DeviceRegistryError``
+    ``SlotUnwrapError`` (incorrect password), ``DeviceRegistryError``
     (missing/corrupt password slot -- a broken vault, not a wrong
-    credential) -- callers must distinguish those for error messaging
-    but never for timing (spec section 21)."""
+    credential), or ``VaultUnreadableError`` (the slot file exists but
+    couldn't even be opened -- e.g. a permission problem -- so the
+    password was never actually compared) -- callers must distinguish
+    all of these for error messaging but never for timing (spec
+    section 21)."""
     slot = read_slot(layout, keyslots.PASSWORD_SLOT_ID)
     return keyslots.unwrap_password_slot(slot, password)
 
@@ -218,6 +254,32 @@ def revoke_device(layout: VaultLayout, device_id: str) -> None:
             r.revoked_utc = _now()
     write_devices(layout, records)
     health.update_integrity_manifest(layout)
+
+
+def reset_master_password_with_local_key(
+    layout: VaultLayout,
+    vault_id: str,
+    new_password: SecretBytes,
+    *,
+    params=None,
+) -> None:
+    """Replace the master-password slot after authenticating with the
+    device's Local Key. The VMS never changes: authentication happens by
+    unwrapping the existing device slot, then only ``password.slot`` is
+    regenerated. This is the intentional password-forgotten path when a
+    valid Local Key is available on this device."""
+    vms = unlock_with_local_key(layout, vault_id)
+    try:
+        new_slot = keyslots.create_password_slot(
+            vault_id,
+            keyslots.PASSWORD_SLOT_ID,
+            new_password,
+            vms,
+            params=params,
+        )
+        write_slot(layout, new_slot)
+    finally:
+        vms.wipe()
 
 
 def change_master_password(

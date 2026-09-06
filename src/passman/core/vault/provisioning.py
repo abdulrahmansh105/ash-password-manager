@@ -34,14 +34,16 @@ from pathlib import Path
 
 from ..crypto import keyslots
 from ..crypto.keyslots import Argon2Params
-from ..devices import local_key, registry as device_registry
+from ..devices import local_key
+from ..devices import registry as device_registry
 from ..devices.local_key import DeviceIdentity
 from ..platforminfo import default_device_label, read_os_pretty_name
 from ..security.memory import SecretBytes
 from ..util.atomic_json import read_json, write_json_atomic
 from ..vaults import health
 from ..vaults.layout import VaultLayout
-from .kdbx import VaultOpenError, create_vault as _create_kdbx, generate_keyfile, open_vault
+from .kdbx import VaultOpenError, generate_keyfile, open_vault
+from .kdbx import create_vault as _create_kdbx
 
 VAULT_SCHEMA_VERSION = 1
 

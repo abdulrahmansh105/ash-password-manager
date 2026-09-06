@@ -17,12 +17,12 @@ single small secret instead of a disk.
 from __future__ import annotations
 
 from .aead import AeadError, SealedBox, open_box, seal
-from .binding import BindingInput, DEFAULT_BINDING_INPUTS, compute_binding
+from .binding import DEFAULT_BINDING_INPUTS, BindingInput, compute_binding
 from .kdf import Argon2Params, derive_key_argon2id, hkdf_sha256
 from .keyslots import (
+    PASSWORD_SLOT_ID,
     KeySlot,
     KeySlotError,
-    PASSWORD_SLOT_ID,
     SlotFormatError,
     SlotKind,
     SlotUnwrapError,
@@ -37,28 +37,28 @@ from .keyslots import (
 )
 
 __all__ = [
-    "AeadError",
-    "SealedBox",
-    "seal",
-    "open_box",
-    "BindingInput",
     "DEFAULT_BINDING_INPUTS",
-    "compute_binding",
+    "PASSWORD_SLOT_ID",
+    "AeadError",
     "Argon2Params",
-    "derive_key_argon2id",
-    "hkdf_sha256",
+    "BindingInput",
     "KeySlot",
     "KeySlotError",
+    "SealedBox",
     "SlotFormatError",
-    "SlotUnwrapError",
     "SlotKind",
-    "PASSWORD_SLOT_ID",
-    "generate_vms",
-    "create_password_slot",
-    "unwrap_password_slot",
+    "SlotUnwrapError",
+    "compute_binding",
     "create_device_slot",
-    "unwrap_device_slot",
+    "create_password_slot",
+    "derive_key_argon2id",
+    "generate_vms",
+    "hkdf_sha256",
+    "open_box",
     "rewrap_password_slot",
+    "seal",
     "slot_id_for_device",
+    "unwrap_device_slot",
+    "unwrap_password_slot",
     "vms_to_kdbx_password",
 ]

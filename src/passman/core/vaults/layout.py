@@ -47,7 +47,7 @@ class VaultLayout:
     container_dir: Path
 
     @staticmethod
-    def at(mountpoint: str, container_rel_path: str) -> "VaultLayout":
+    def at(mountpoint: str, container_rel_path: str) -> VaultLayout:
         mount = Path(mountpoint).resolve()
         container = _safe_join(mount, container_rel_path)
         return VaultLayout(container_dir=container)

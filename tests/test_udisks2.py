@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import pytest
 
-from passman.integration.usb.identity import UsbState, evaluate_usb_status, should_lock_for_usb_state
+from passman.core.vaults.registry import VaultRecord
+from passman.integration.usb.identity import (
+    UsbState,
+    evaluate_usb_status,
+    should_lock_for_usb_state,
+)
 from passman.integration.usb.udisks2 import (
     RawBlockInfo,
     RawDriveInfo,
@@ -21,7 +26,6 @@ from passman.integration.usb.udisks2 import (
     list_block_devices,
     list_drive_choices,
 )
-from passman.core.vaults.registry import VaultRecord
 
 
 def _drive(**overrides) -> RawDriveInfo:

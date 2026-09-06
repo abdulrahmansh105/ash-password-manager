@@ -1,7 +1,4 @@
 from .clipboard import ClipboardManager, ClipboardStatus, ClipboardUnavailableError
-from .memory import SecretBytes, wipe_str_best_effort
-from .password_strength import MIN_LENGTH, PasswordStrength, estimate_password_strength
-from .session import LockReason, Session, SessionState
 from .logging import (
     UnsafeLogFieldError,
     get_logger,
@@ -9,13 +6,16 @@ from .logging import (
     safe_extra,
     scrub_argv,
 )
+from .memory import SecretBytes, wipe_str_best_effort
+from .password_strength import MIN_LENGTH, PasswordStrength, estimate_password_strength
+from .session import LockReason, Session, SessionState
 
 __all__ = [
+    "MIN_LENGTH",
     "ClipboardManager",
     "ClipboardStatus",
     "ClipboardUnavailableError",
     "LockReason",
-    "MIN_LENGTH",
     "PasswordStrength",
     "SecretBytes",
     "Session",

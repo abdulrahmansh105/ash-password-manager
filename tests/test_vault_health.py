@@ -3,7 +3,11 @@ health-check report (spec sections 21, 24, 25)."""
 
 from __future__ import annotations
 
-from passman.core.vaults.health import HealthStatus, check_vault_health, update_integrity_manifest
+from passman.core.vaults.health import (
+    HealthStatus,
+    check_vault_health,
+    update_integrity_manifest,
+)
 from passman.core.vaults.layout import VaultLayout
 
 

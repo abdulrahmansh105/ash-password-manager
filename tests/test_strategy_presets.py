@@ -3,7 +3,12 @@ Structurally cannot hold a secret (presets are step sequences only)."""
 
 from __future__ import annotations
 
-from passman.core.auth.strategy import DEFAULT_STRATEGY, AuthStep, AuthStrategy, StepAction
+from passman.core.auth.strategy import (
+    DEFAULT_STRATEGY,
+    AuthStep,
+    AuthStrategy,
+    StepAction,
+)
 from passman.core.auth.strategy_presets import (
     delete_custom_preset,
     load_custom_presets,

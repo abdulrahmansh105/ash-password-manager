@@ -50,7 +50,7 @@ class AuthStep:
         return d
 
     @staticmethod
-    def from_dict(d: dict) -> "AuthStep":
+    def from_dict(d: dict) -> AuthStep:
         return AuthStep(
             action=StepAction(d["action"]),
             value=d.get("value"),
@@ -70,7 +70,7 @@ class AuthStrategy:
         return json.dumps({"name": self.name, "steps": [s.to_dict() for s in self.steps]})
 
     @staticmethod
-    def from_json(raw: str | None) -> "AuthStrategy":
+    def from_json(raw: str | None) -> AuthStrategy:
         if not raw:
             return DEFAULT_STRATEGY
         try:

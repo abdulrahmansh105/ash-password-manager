@@ -10,7 +10,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
-from gi.repository import Adw, Gdk, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, Gtk
 
 from ..config.store import (
     CLIPBOARD_TIMEOUT_CHOICES,
@@ -20,7 +20,8 @@ from ..config.store import (
     save_settings,
 )
 from ..core.backup.archive import BackupError, backup_filename, create_backup
-from ..core.devices.registry import list_devices, revoke_device
+from ..core.devices import local_key as local_key_store
+from ..core.devices.registry import list_devices, reset_master_password_with_local_key, revoke_device
 from ..core.security.memory import SecretBytes
 from ..core.vaults.health import check_vault_health
 from ..core.vaults.layout import VaultLayout
@@ -99,6 +100,25 @@ class SettingsDialog(Adw.PreferencesDialog):
         self._clip_timeout_row.set_selected(list(CLIPBOARD_TIMEOUT_CHOICES.keys()).index(s.clipboard_timeout_key))
         clip_group.add(self._clip_timeout_row)
         security.add(clip_group)
+
+        password_page = Adw.PreferencesPage(title="Password", icon_name="dialog-password-symbolic")
+        password_group = Adw.PreferencesGroup(
+            title="Master Password",
+            description=(
+                "Reset the master password using this device's Local Key. "
+                "The vault's encryption key is not changed."
+            ),
+        )
+        self._reset_password_btn = Gtk.Button(label="Reset Master Password", hexpand=True)
+        self._reset_password_btn.add_css_class("suggested-action")
+        self._reset_password_btn.set_sensitive(bool(app.vault_id and local_key_store.has_local_key(app.vault_id)))
+        self._reset_password_btn.connect("clicked", self._on_reset_master_password)
+        password_group.add(self._reset_password_btn)
+        self._reset_password_status = Gtk.Label(xalign=0, wrap=True)
+        self._reset_password_status.set_visible(False)
+        password_group.add(self._reset_password_status)
+        password_page.add(password_group)
+        self.add(password_page)
         self.add(security)
 
         auth = Adw.PreferencesPage(title="Authentication", icon_name="input-keyboard-symbolic")
@@ -219,6 +239,69 @@ class SettingsDialog(Adw.PreferencesDialog):
         save_settings(s)
         self._app.session.inactivity_timeout_seconds = s.effective_auto_lock_timeout_seconds()
 
+    def _on_reset_master_password(self, _btn) -> None:
+        new_pw = Adw.PasswordEntryRow(title="New master password")
+        confirm_pw = Adw.PasswordEntryRow(title="Confirm new master password")
+        page = Adw.PreferencesPage(title="Reset Master Password")
+        group = Adw.PreferencesGroup(description="Authenticated by this device's Local Key.")
+        group.add(new_pw)
+        group.add(confirm_pw)
+        status = Gtk.Label(xalign=0, wrap=True)
+        status.set_visible(False)
+        group.add(status)
+        page.add(group)
+
+        dialog = Adw.Dialog(title="Reset Master Password", content_width=420, content_height=320)
+        toolbar = Adw.ToolbarView()
+        header = Adw.HeaderBar(show_title=True)
+        toolbar.add_top_bar(header)
+        toolbar.set_content(page)
+        dialog.set_child(toolbar)
+
+        save_btn = Gtk.Button(label="Set New Password")
+        save_btn.add_css_class("suggested-action")
+        header.pack_end(save_btn)
+
+        def submit(_btn) -> None:
+            first = new_pw.get_text()
+            second = confirm_pw.get_text()
+            if not first or first != second:
+                status.set_text("Enter the same new password in both fields.")
+                status.set_visible(True)
+                return
+            save_btn.set_sensitive(False)
+            self._reset_password_btn.set_sensitive(False)
+            secret = SecretBytes(first)
+
+            def work() -> str | None:
+                try:
+                    reset_master_password_with_local_key(
+                        self._layout, self._app.vault_id, secret
+                    )
+                    return None
+                except Exception as exc:
+                    return type(exc).__name__
+                finally:
+                    secret.wipe()
+
+            def done(error_name: str | None) -> None:
+                save_btn.set_sensitive(True)
+                self._reset_password_btn.set_sensitive(error_name is None)
+                if error_name is None:
+                    dialog.close()
+                    self._reset_password_status.set_text("Master password updated successfully using the Local Key.")
+                else:
+                    status.set_text("Could not reset the master password. The Local Key may be unavailable or revoked.")
+                    status.set_visible(True)
+                    self._reset_password_status.set_text("Reset failed. No password was changed.")
+                self._reset_password_status.set_visible(True)
+
+            from ..core.auth.async_login import run_blocking_async
+            run_blocking_async(work, done)
+
+        save_btn.connect("clicked", submit)
+        dialog.present(self)
+
     # -- Vault health ---------------------------------------------------------
 
     def _on_check_health(self, _btn) -> None:
@@ -233,8 +316,6 @@ class SettingsDialog(Adw.PreferencesDialog):
     def _build_devices_page(self) -> Adw.PreferencesPage:
         page = Adw.PreferencesPage(title="Devices", icon_name="computer-symbolic")
         this_group = Adw.PreferencesGroup(title="This Device")
-        from ..core.devices import local_key as local_key_store
-
         has_key = local_key_store.has_local_key(self._app.vault_id)
         identity = local_key_store.load_identity(self._app.vault_id) if has_key else None
         this_group.add(Gtk.Label(label="✓ Registered", xalign=0))

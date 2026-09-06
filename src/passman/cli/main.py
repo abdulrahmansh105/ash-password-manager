@@ -30,7 +30,7 @@ from ..input import select_backend
 from ..integration.hyprland import keybind as hypr
 from ..integration.usb.identity import UsbState, check_vault_paths, evaluate_usb_status
 from ..integration.usb.udisks import UdisksError, list_block_devices
-from ..launcher.daemon import register_shortcut, run_show
+from ..launcher.daemon import run_show
 from ..launcher.ipc import send_command
 
 

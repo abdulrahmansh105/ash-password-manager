@@ -25,7 +25,7 @@ from typing import Any
 
 from ..security.memory import SecretBytes
 from .aead import AeadError, SealedBox, open_box, seal
-from .binding import BindingInput, DEFAULT_BINDING_INPUTS, compute_binding
+from .binding import DEFAULT_BINDING_INPUTS, BindingInput, compute_binding
 from .kdf import Argon2Params, derive_key_argon2id, hkdf_sha256
 
 VMS_LEN = 32
@@ -83,7 +83,7 @@ def _unb64(data: str) -> bytes:
 
 
 def _aad(vault_id: str, slot_id: str, kind: SlotKind) -> bytes:
-    return f"ash-pm/slot/v{SLOT_FORMAT_VERSION}/{vault_id}/{slot_id}/{kind.value}".encode("utf-8")
+    return f"ash-pm/slot/v{SLOT_FORMAT_VERSION}/{vault_id}/{slot_id}/{kind.value}".encode()
 
 
 def _zero(buf: bytearray) -> None:
@@ -130,7 +130,7 @@ class KeySlot:
         return d
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> "KeySlot":
+    def from_dict(d: dict[str, Any]) -> KeySlot:
         try:
             version = int(d["version"])
             if version != SLOT_FORMAT_VERSION:

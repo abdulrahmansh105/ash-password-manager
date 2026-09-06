@@ -57,7 +57,7 @@ def test_run_show_passes_captured_context_to_run_main_app(monkeypatch, tmp_path)
     with (
         patch.object(daemon, "get_active_window_context", lambda: captured_context),
         patch.object(daemon, "is_ui_running", lambda: False),
-        patch.object(daemon, "list_block_devices", lambda: []),
+        patch.object(daemon, "list_block_devices", list),
         patch(
             "passman.ui.app.run_main_app",
             fake_run_main_app,

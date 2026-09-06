@@ -135,7 +135,7 @@ def test_recovery_code_serialization_never_touches_logging(caplog):
 
 def test_password_generation_never_writes_a_temp_file(tmp_path, monkeypatch):
     monkeypatch.setenv("TMPDIR", str(tmp_path))
-    from passman.core.generator import generate_random_password, RandomPasswordPolicy
+    from passman.core.generator import RandomPasswordPolicy, generate_random_password
 
     pw = generate_random_password(RandomPasswordPolicy(length=32))
     for f in tmp_path.rglob("*"):
@@ -159,8 +159,8 @@ def test_login_run_never_writes_a_temp_file(tmp_path, monkeypatch):
 
 def test_kdbx_file_bytes_never_contain_plaintext_password_or_totp_secret(tmp_path):
     pytest.importorskip("pykeepass")
-    from passman.core.vault.kdbx import create_vault
     from passman.core.totp.totp import TotpConfig as TC
+    from passman.core.vault.kdbx import create_vault
 
     vault_path = tmp_path / "Passwords.kdbx"
     key_path = tmp_path / "Key.key"

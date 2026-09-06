@@ -16,11 +16,15 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
-from ..core.appdirs import config_home, legacy_config_home, migrate_legacy_config_if_needed
+from ..core.appdirs import (
+    config_home,
+    legacy_config_home,
+    migrate_legacy_config_if_needed,
+)
 
 DIR_MODE = 0o700
 FILE_MODE = 0o600

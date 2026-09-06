@@ -65,7 +65,7 @@ class SecretBytes:
             self._buf[i] = 0
         self._wiped = True
 
-    def __enter__(self) -> "SecretBytes":
+    def __enter__(self) -> SecretBytes:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
@@ -86,4 +86,4 @@ def wipe_str_best_effort(_value: str) -> None:
     nothing. Always pair with clearing the widget/reference immediately
     after use.
     """
-    return None
+    return

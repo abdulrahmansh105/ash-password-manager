@@ -19,7 +19,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gtk
 
 from ..core.auth.async_login import run_blocking_async
 from ..core.auth.detection import get_active_window_context
@@ -66,7 +66,7 @@ class StrategyStepRow(Gtk.Box):
     validated entry, FOCUS_FIELD gets a field-hint entry plus an
     AT-SPI-required warning; the rest need no extra field."""
 
-    def __init__(self, index: int, step: AuthStep, editor: "StrategyEditorDialog") -> None:
+    def __init__(self, index: int, step: AuthStep, editor: StrategyEditorDialog) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.add_css_class("card")
         self.set_margin_top(4)
@@ -110,7 +110,7 @@ class StrategyStepRow(Gtk.Box):
             extra.set_margin_bottom(8)
             self.append(extra)
 
-    def _build_value_field(self, step: AuthStep, index: int, editor: "StrategyEditorDialog"):
+    def _build_value_field(self, step: AuthStep, index: int, editor: StrategyEditorDialog):
         if step.action == StepAction.WAIT:
             box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
             box.append(Gtk.Label(label="Milliseconds:"))

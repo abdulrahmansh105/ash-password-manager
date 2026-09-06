@@ -85,7 +85,7 @@ class AccountSecrets:
         self.password.wipe()
         self.recovery_codes.clear()
 
-    def __enter__(self) -> "AccountSecrets":
+    def __enter__(self) -> AccountSecrets:
         return self
 
     def __exit__(self, *exc_info: object) -> None:

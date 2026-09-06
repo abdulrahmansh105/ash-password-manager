@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from passman.core.security.password_strength import MIN_LENGTH, estimate_password_strength
+from passman.core.security.password_strength import (
+    MIN_LENGTH,
+    estimate_password_strength,
+)
 
 
 def test_empty_password_is_very_weak():

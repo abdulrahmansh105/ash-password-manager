@@ -10,7 +10,15 @@ from .identity import (
     parse_lsblk_json,
     should_lock_for_usb_state,
 )
-from .udisks import UdisksError, is_available, list_block_devices, lock, mount, unlock, unmount
+from .udisks import (
+    UdisksError,
+    is_available,
+    list_block_devices,
+    lock,
+    mount,
+    unlock,
+    unmount,
+)
 
 __all__ = [
     "BlockDevice",

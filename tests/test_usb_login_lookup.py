@@ -4,7 +4,10 @@ UDisks2/udisksctl I/O monkeypatched."""
 
 from __future__ import annotations
 
-from passman.core.flows.usb_login_lookup import find_and_mount_vault, find_connected_vault
+from passman.core.flows.usb_login_lookup import (
+    find_and_mount_vault,
+    find_connected_vault,
+)
 from passman.core.vaults.registry import VaultRecord
 from passman.integration.usb.udisks2 import RawBlockInfo
 

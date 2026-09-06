@@ -225,7 +225,7 @@ class PortalShortcutBackend(ShortcutBackend):
             return False
 
         handle_token = _new_token("bind")
-        shortcut_opts: dict[str, "GLib.Variant"] = {"description": GLib.Variant("s", description)}
+        shortcut_opts: dict[str, GLib.Variant] = {"description": GLib.Variant("s", description)}
         if preferred_trigger:
             shortcut_opts["preferred_trigger"] = GLib.Variant("s", preferred_trigger)
         options = {"handle_token": GLib.Variant("s", handle_token)}  # plain dict; see create_session()'s note

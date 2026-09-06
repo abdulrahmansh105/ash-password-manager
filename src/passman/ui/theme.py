@@ -24,7 +24,7 @@ from __future__ import annotations
 import gi
 
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gdk, Gtk  # noqa: E402
+from gi.repository import Gdk, Gtk
 
 # Blue-600/Slate palette: accessible contrast on white, calm enough
 # for a security-sensitive tool (spec section 22: "avoid clutter").

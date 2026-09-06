@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from passman.config.store import Settings
-from passman.core.security.session import LockReason, Session
+from passman.core.security.session import Session
 from passman.core.vaults.registry import VaultRecord
 from passman.integration.usb.udisks import UdisksError
 from passman.ui.app import PasswordManagerApp
@@ -93,7 +93,7 @@ def test_non_luks_vault_genuinely_mounted_does_not_spuriously_lock(monkeypatch):
 
 
 def test_non_luks_vault_removed_locks_under_lock_immediately(monkeypatch):
-    monkeypatch.setattr("passman.ui.app.list_block_devices", lambda: [])  # nothing connected at all
+    monkeypatch.setattr("passman.ui.app.list_block_devices", list)  # nothing connected at all
 
     record = VaultRecord(vault_id="v1", name="Test", filesystem_uuid="fs-1", luks_uuid=None)
     app = _unlocked_app(registration=record, usb_removal_action="lock_immediately")
@@ -104,7 +104,7 @@ def test_non_luks_vault_removed_locks_under_lock_immediately(monkeypatch):
 
 
 def test_non_luks_vault_removed_does_not_lock_under_keep_unlocked(monkeypatch):
-    monkeypatch.setattr("passman.ui.app.list_block_devices", lambda: [])
+    monkeypatch.setattr("passman.ui.app.list_block_devices", list)
 
     record = VaultRecord(vault_id="v1", name="Test", filesystem_uuid="fs-1", luks_uuid=None)
     app = _unlocked_app(registration=record, usb_removal_action="keep_unlocked")

@@ -49,7 +49,7 @@ def normalize_base32_secret(raw: str) -> str:
         raise InvalidTotpSecretError("TOTP secret is not valid base32.")
     try:
         base64.b32decode(cleaned)
-    except Exception as exc:  # noqa: BLE001 - re-raised as our own type
+    except Exception as exc:
         raise InvalidTotpSecretError("TOTP secret is not valid base32.") from exc
     return cleaned
 

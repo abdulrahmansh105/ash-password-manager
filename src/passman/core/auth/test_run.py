@@ -36,7 +36,7 @@ from .strategy_editor import STEP_LABELS
 # never the account's own TOTP seed.
 FAKE_TOTP_SECRET = "JBSWY3DPEHPK3PXP"
 FAKE_USERNAME = "test-username"
-FAKE_PASSWORD = "test-password-not-real"  # noqa: S105 -- fake placeholder, not a credential
+FAKE_PASSWORD = "test-password-not-real"
 
 
 @dataclass(frozen=True)

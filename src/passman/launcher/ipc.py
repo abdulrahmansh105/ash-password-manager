@@ -57,7 +57,7 @@ def send_command(command: str, timeout: float = 2.0) -> str | None:
                     break
                 chunks.append(chunk)
             return b"".join(chunks).decode("utf-8", errors="replace").strip()
-    except (OSError, socket.timeout):
+    except (TimeoutError, OSError):
         return None
 
 
@@ -100,7 +100,7 @@ class ControlServer:
         while not self._stop.is_set():
             try:
                 conn, _ = self._server.accept()
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except OSError:
                 break
@@ -117,7 +117,7 @@ class ControlServer:
                     handler = self._handlers.get(command)
                     response = handler(command) if handler else "unknown_command"
                     conn.sendall(response.encode("utf-8"))
-                except (OSError, socket.timeout):
+                except (TimeoutError, OSError):
                     pass
 
     def stop(self) -> None:

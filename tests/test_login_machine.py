@@ -4,6 +4,7 @@ Local Key exists, the password must never be requested."""
 
 from __future__ import annotations
 
+from passman.core.devices.registry import VaultUnreadableError
 from passman.core.flows.login_machine import (
     LoginFailureReason,
     LoginFlow,
@@ -105,6 +106,27 @@ def test_submit_password_wrong_password_stays_at_ask_password():
 
     assert result.state == LoginState.ASK_PASSWORD
     assert result.failure == LoginFailureReason.INCORRECT_PASSWORD
+
+
+def test_submit_password_unreadable_vault_is_not_reported_as_wrong_password():
+    """Regression test for a real, live bug: entering the genuinely
+    correct master password produced "Incorrect password" because the
+    key slot could not even be read (a permissions problem -- see
+    test_device_registry.py's matching test at the lower layer, and
+    core.devices.registry.VaultUnreadableError's docstring). The
+    password was never actually compared, so this must surface as a
+    distinct failure reason, never LoginFailureReason.INCORRECT_PASSWORD."""
+
+    def password_fn(record, mp, pw):
+        raise VaultUnreadableError("permission denied reading the password slot")
+
+    flow = _flow(local_key=_no_local_key_enrolled, password=password_fn)
+    outcome = attempt_automatic_login(flow)
+    result = flow.submit_password(outcome.vault_record, outcome.mountpoint, SecretBytes("this-is-the-correct-password"))
+
+    assert result.state == LoginState.ASK_PASSWORD
+    assert result.failure == LoginFailureReason.VAULT_UNREADABLE
+    assert result.failure != LoginFailureReason.INCORRECT_PASSWORD
 
 
 def test_retrying_a_wrong_password_never_re_attempts_local_key():

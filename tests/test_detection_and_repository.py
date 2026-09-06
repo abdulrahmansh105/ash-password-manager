@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from passman.core.accounts.repository import rank_by_context, search, suggested_and_other
+from passman.core.accounts.repository import (
+    rank_by_context,
+    search,
+    suggested_and_other,
+)
 from passman.core.auth.detection import Confidence, DetectedContext, match_confidence
 from passman.core.vault.models import AccountSummary
 

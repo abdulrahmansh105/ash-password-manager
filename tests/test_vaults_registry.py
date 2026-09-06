@@ -4,7 +4,14 @@ usb.json is never silently imported into it (spec sections 5, 13, 14)."""
 
 from __future__ import annotations
 
-from passman.core.vaults.registry import VaultRecord, add_vault, get_vault, load_vaults, remove_vault, touch_last_seen
+from passman.core.vaults.registry import (
+    VaultRecord,
+    add_vault,
+    get_vault,
+    load_vaults,
+    remove_vault,
+    touch_last_seen,
+)
 
 
 def test_no_vaults_registered_returns_empty_list(isolated_xdg):
@@ -69,7 +76,11 @@ def test_vault_record_is_duck_type_compatible_with_usb_identity(isolated_xdg):
     """integration.usb.identity.evaluate_usb_status(devices, reg) only
     ever reads .luks_uuid/.filesystem_uuid off `reg` -- a VaultRecord
     must work as a drop-in there without any adapter."""
-    from passman.integration.usb.identity import BlockDevice, evaluate_usb_status, UsbState
+    from passman.integration.usb.identity import (
+        BlockDevice,
+        UsbState,
+        evaluate_usb_status,
+    )
 
     record = VaultRecord(vault_id="v1", name="A", filesystem_uuid="fs-uuid-xyz", luks_uuid=None)
     devices = [BlockDevice(name="sdz", path="/dev/sdz", uuid=None, fstype=None, type="disk", mountpoint=None)]

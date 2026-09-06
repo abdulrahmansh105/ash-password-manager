@@ -27,10 +27,11 @@ loop).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable
 
+from ..devices.registry import VaultUnreadableError
 from ..security.memory import SecretBytes
 from ..vaults.registry import VaultRecord
 
@@ -49,6 +50,7 @@ class LoginFailureReason(str, Enum):
     MOUNT_FAILED = "mount_failed"
     INCORRECT_PASSWORD = "incorrect_password"
     VAULT_OPEN_FAILED = "vault_open_failed"
+    VAULT_UNREADABLE = "vault_unreadable"
 
 
 @dataclass
@@ -87,7 +89,14 @@ class LoginFlow:
     any failure (they are expected to be thin wrappers around
     ``core.devices.registry.unlock_with_local_key``/
     ``unlock_with_password``) -- this class only decides what to do
-    with success vs. failure, never inspects the exception type.
+    with success vs. failure, and, with one deliberate exception,
+    never inspects the exception type: ``submit_password`` does check
+    for ``VaultUnreadableError`` specifically, because that one means
+    the password was never actually compared (an I/O-level failure --
+    confirmed live: a vault container directory owned by a different
+    OS user than the one logging in), and reporting it as "Incorrect
+    password" would be actively misleading about a password that may
+    well be correct.
     """
 
     identify_usb: IdentifyUsbFn
@@ -135,6 +144,16 @@ class LoginFlow:
         no path back into ``try_local_key`` for this attempt."""
         try:
             vms = self.unlock_with_password(record, mountpoint, password)
+        except VaultUnreadableError:
+            # The password was never actually compared -- see the class
+            # docstring. Must never fall into the generic branch below.
+            return LoginOutcome(
+                state=LoginState.ASK_PASSWORD,
+                vault_record=record,
+                mountpoint=mountpoint,
+                fallback_used=self._fallback_used,
+                failure=LoginFailureReason.VAULT_UNREADABLE,
+            )
         except Exception:  # noqa: BLE001 - wrong password or a broken slot; both surface identically to the user
             return LoginOutcome(
                 state=LoginState.ASK_PASSWORD,

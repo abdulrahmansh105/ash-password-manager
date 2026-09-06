@@ -21,11 +21,11 @@ from .portal import PortalShortcutBackend
 __all__ = [
     "BindOutcome",
     "BindResult",
-    "ShortcutBackend",
     "GnomeShortcutBackend",
     "HyprlandShortcutBackend",
     "ManualShortcutBackend",
     "PortalShortcutBackend",
+    "ShortcutBackend",
     "available_backends",
     "select_and_bind",
 ]

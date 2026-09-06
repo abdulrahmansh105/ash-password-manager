@@ -3,7 +3,12 @@ from .async_login import (
     run_blocking_async,
     run_login_async,
 )
-from .detection import Confidence, DetectedContext, get_active_window_context, match_confidence
+from .detection import (
+    Confidence,
+    DetectedContext,
+    get_active_window_context,
+    match_confidence,
+)
 from .engine import (
     GuardDecision,
     LoginEngine,
@@ -39,7 +44,11 @@ from .strategy_editor import (
     validate_strategy,
     validate_wait_ms,
 )
-from .strategy_presets import delete_custom_preset, load_custom_presets, save_custom_preset
+from .strategy_presets import (
+    delete_custom_preset,
+    load_custom_presets,
+    save_custom_preset,
+)
 from .test_run import (
     FAKE_PASSWORD,
     FAKE_TOTP_SECRET,

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from passman.core.auth.strategy import DEFAULT_STRATEGY, AuthStep, AuthStrategy, StepAction
+from passman.core.auth.strategy import (
+    DEFAULT_STRATEGY,
+    AuthStep,
+    AuthStrategy,
+    StepAction,
+)
 
 
 def test_default_strategy_round_trips_through_json():

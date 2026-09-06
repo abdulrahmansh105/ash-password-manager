@@ -14,8 +14,8 @@ import json
 import os
 from pathlib import Path
 
-from .strategy import AuthStrategy
 from ...config.store import DIR_MODE, FILE_MODE, config_dir
+from .strategy import AuthStrategy
 
 
 def presets_path() -> Path:

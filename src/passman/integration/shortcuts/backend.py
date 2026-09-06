@@ -44,7 +44,7 @@ class ShortcutBackend(ABC):
         compositor restart (see ``hyprland.py``). A no-op default is
         correct for backends that persist on their own (portal,
         gsettings, kwriteconfig)."""
-        return None
+        return
 
     def conflicts_with_existing(self, accelerator: str) -> str | None:
         """Returns a human-readable description of what already owns

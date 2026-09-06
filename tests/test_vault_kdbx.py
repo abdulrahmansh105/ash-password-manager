@@ -12,15 +12,15 @@ import pytest
 
 pytest.importorskip("pykeepass")
 
-from passman.core.auth.strategy import DEFAULT_STRATEGY  # noqa: E402
-from passman.core.totp.totp import TotpConfig  # noqa: E402
-from passman.core.vault.kdbx import (  # noqa: E402
+from passman.core.auth.strategy import DEFAULT_STRATEGY
+from passman.core.totp.totp import TotpConfig
+from passman.core.vault.kdbx import (
     EntryNotFoundError,
     VaultOpenError,
     create_vault,
     open_vault,
 )
-from passman.core.vault.models import RecoveryCode  # noqa: E402
+from passman.core.vault.models import RecoveryCode
 
 FAKE_TOTP_SECRET = "JBSWY3DPEHPK3PXP"
 

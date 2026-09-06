@@ -10,7 +10,11 @@ import pytest
 pytest.importorskip("pykeepass")
 
 from passman.core.vault.kdbx import create_vault
-from passman.core.vault.models import CATEGORY_CHOICES, DEFAULT_CATEGORY, normalize_category
+from passman.core.vault.models import (
+    CATEGORY_CHOICES,
+    DEFAULT_CATEGORY,
+    normalize_category,
+)
 
 
 def test_default_category_is_logins():

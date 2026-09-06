@@ -76,7 +76,7 @@ class EntryNotFoundError(VaultError):
 
 def _require_pykeepass():
     try:
-        import pykeepass  # noqa: F401
+        import pykeepass
         return pykeepass
     except ImportError as exc:
         raise VaultError(
@@ -349,7 +349,7 @@ def open_vault(vault_path: Path, key_file_path: Path | None, password: SecretByt
 
     try:
         kp = pykeepass.PyKeePass(str(vault_path), **kwargs)
-    except Exception as exc:  # noqa: BLE001 - pykeepass raises several distinct types
+    except Exception as exc:
         raise VaultOpenError(f"Failed to open vault: {type(exc).__name__}") from exc
     finally:
         if password is not None:

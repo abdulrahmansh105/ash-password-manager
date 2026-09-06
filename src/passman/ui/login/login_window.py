@@ -25,27 +25,27 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gio, GLib, Gtk
 
-from ...core.auth.async_login import run_blocking_async  # noqa: E402
-from ...core.crypto.keyslots import vms_to_kdbx_password  # noqa: E402
-from ...core.devices import local_key as local_key_store  # noqa: E402
-from ...core.devices import registry as device_registry  # noqa: E402
-from ...core.flows.login_machine import (  # noqa: E402
+from ...core.auth.async_login import run_blocking_async
+from ...core.crypto.keyslots import vms_to_kdbx_password
+from ...core.devices import local_key as local_key_store
+from ...core.devices import registry as device_registry
+from ...core.flows.login_machine import (
     LoginFailureReason,
     LoginFlow,
     LoginOutcome,
     LoginState,
     attempt_automatic_login,
 )
-from ...core.platforminfo import default_device_label  # noqa: E402
-from ...core.security.logging import get_logger, safe_extra  # noqa: E402
-from ...integration import notify  # noqa: E402
-from ...core.security.memory import SecretBytes  # noqa: E402
-from ...core.vault.kdbx import VaultHandle, VaultOpenError, open_vault  # noqa: E402
-from ...core.vaults.layout import VaultLayout  # noqa: E402
-from ...core.vaults.registry import VaultRecord, touch_last_seen  # noqa: E402
-from ..widgets import build_brand_header, build_local_key_offer_content  # noqa: E402
+from ...core.platforminfo import default_device_label
+from ...core.security.logging import get_logger, safe_extra
+from ...core.security.memory import SecretBytes
+from ...core.vault.kdbx import VaultHandle, VaultOpenError, open_vault
+from ...core.vaults.layout import VaultLayout
+from ...core.vaults.registry import VaultRecord, touch_last_seen
+from ...integration import notify
+from ..widgets import build_brand_header, build_local_key_offer_content
 
 APP_ID = "dev.ash.PasswordManager.Login"
 _log = get_logger(__name__)
@@ -55,6 +55,7 @@ _FAILURE_MESSAGES = {
     LoginFailureReason.MOUNT_FAILED: "The vault's USB could not be mounted.",
     LoginFailureReason.INCORRECT_PASSWORD: "Incorrect password.",
     LoginFailureReason.VAULT_OPEN_FAILED: "The vault could not be opened -- it may be corrupted.",
+    LoginFailureReason.VAULT_UNREADABLE: "The vault's key data could not be read (a permissions problem on the USB) -- this is not a wrong password.",
 }
 
 
@@ -90,7 +91,7 @@ class LoginWindow(Adw.ApplicationWindow):
     identification/mounting -- this window only drives
     authentication."""
 
-    def __init__(self, app: "LoginApp", record: VaultRecord, mountpoint: str) -> None:
+    def __init__(self, app: LoginApp, record: VaultRecord, mountpoint: str) -> None:
         super().__init__(application=app, default_width=420, default_height=460, title="ASH Password Manager")
         self._record = record
         self._mountpoint = mountpoint
@@ -150,6 +151,15 @@ class LoginWindow(Adw.ApplicationWindow):
         login_btn.connect("clicked", self._on_submit_password)
         box.append(login_btn)
 
+        self._local_key_btn = Gtk.Button(label="Use Local Key", hexpand=True)
+        self._local_key_btn.connect("clicked", self._on_use_local_key)
+        self._local_key_btn.set_visible(local_key_store.has_local_key(self._record.vault_id))
+        box.append(self._local_key_btn)
+
+        forgot_btn = Gtk.Button(label="Forgot password?", has_frame=False)
+        forgot_btn.connect("clicked", self._on_forgot_password)
+        box.append(forgot_btn)
+
         hint = Gtk.Label(
             label="First time on this device? Signing in will offer to register it.",
             xalign=0.5,
@@ -194,6 +204,38 @@ class LoginWindow(Adw.ApplicationWindow):
             self._password_row.grab_focus()
             return
         self._show_failure(outcome.failure)
+
+    def _on_use_local_key(self, _btn) -> None:
+        self._password_error.set_visible(False)
+        self._local_key_btn.set_sensitive(False)
+        run_blocking_async(
+            lambda: self._flow.try_local_key(self._record, self._mountpoint),
+            self._on_manual_local_key_result,
+        )
+
+    def _on_manual_local_key_result(self, outcome: LoginOutcome) -> None:
+        self._local_key_btn.set_sensitive(True)
+        if outcome.state == LoginState.MANAGER:
+            self._finish_unlock(outcome)
+            return
+        if outcome.state == LoginState.ASK_PASSWORD:
+            self._password_error.set_text("Local Key could not unlock this vault. Enter your master password.")
+            self._password_error.set_visible(True)
+            self._password_row.grab_focus()
+            return
+        self._show_failure(outcome.failure)
+
+    def _on_forgot_password(self, _btn) -> None:
+        dialog = Adw.AlertDialog(
+            heading="Forgot your master password?",
+            body=(
+                "The master password cannot be recovered or bypassed. "
+                "If this device has a valid Local Key, use it to unlock the vault and reset the master password from Settings. "
+                "Otherwise, restore from an encrypted .ashbak backup."
+            ),
+        )
+        dialog.add_response("ok", "OK")
+        dialog.present(self)
 
     def _on_submit_password(self, _btn) -> None:
         password_text = self._password_row.get_text()
