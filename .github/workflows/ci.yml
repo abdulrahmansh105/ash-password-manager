@@ -12,7 +12,7 @@ jobs:
       GSETTINGS_BACKEND: memory
       NO_AT_BRIDGE: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install desktop libraries and test display
         run: |
           sudo apt-get update
@@ -20,7 +20,7 @@ jobs:
       - name: Install project and build tools
         run: |
           python3 -m venv --system-site-packages .venv
-          .venv/bin/python -m pip install '.[dev]' build setuptools wheel
+          .venv/bin/python -m pip install '.[dev]' build 'setuptools>=77.0.3' wheel
       - name: Run suite on a disposable display and D-Bus session
         run: xvfb-run -a dbus-run-session -- .venv/bin/python -m pytest -q
       - name: Build wheel
