@@ -42,6 +42,7 @@ from .account_detail import AccountDetailDialog
 from .entry_editor import EntryEditorDialog, TotpSetupDialog
 from .generator_view import GeneratorDialog
 from .settings_window import SettingsDialog
+from .widgets import style_window
 
 _log = get_logger(__name__)
 
@@ -136,6 +137,7 @@ class AccountPickerWindow(Adw.ApplicationWindow):
     def __init__(self, app) -> None:
         super().__init__(application=app, default_width=500, default_height=580)
         self.app = app
+        style_window(self, app.settings)
         self._all_accounts: list[AccountSummary] = []
         self._app_ids_by_uuid: dict[str, tuple[str, ...]] = {}
         self._nav_rows: list[AccountRow] = []
@@ -151,7 +153,7 @@ class AccountPickerWindow(Adw.ApplicationWindow):
         self._search_entry = Gtk.SearchEntry(placeholder_text="Search accounts...")
         self._search_entry.connect("search-changed", self._on_search_changed)
         self._search_entry.connect("activate", self._on_search_activate)
-        header.set_title_widget(self._search_entry)
+        header.set_title_widget(Gtk.Label(label="Quick sign-in", css_classes=["ash-brand-title"]))
 
         add_button = Gtk.Button.new_from_icon_name("list-add-symbolic")
         add_button.set_tooltip_text("Add account")
@@ -169,6 +171,13 @@ class AccountPickerWindow(Adw.ApplicationWindow):
         header.pack_end(settings_button)
 
         root.append(header)
+        hint = Gtk.Label(label="Choose an account to fill in the active app.", xalign=0, wrap=True, margin_start=20, margin_end=20, margin_top=12, margin_bottom=12)
+        hint.add_css_class("pm-subtitle")
+        root.append(hint)
+        self._search_entry.set_margin_start(16)
+        self._search_entry.set_margin_end(16)
+        self._search_entry.set_margin_bottom(8)
+        root.append(self._search_entry)
 
         scroller = Gtk.ScrolledWindow(vexpand=True)
         self._scroller = scroller
@@ -190,6 +199,10 @@ class AccountPickerWindow(Adw.ApplicationWindow):
         self._confirm_bar = Adw.Banner()
         self._confirm_bar.set_revealed(False)
         root.append(self._confirm_bar)
+        footer = Gtk.Label(label="↑ ↓  Navigate    Enter  Sign in    Right-click  Details", wrap=True)
+        footer.add_css_class("pm-footer")
+        footer.add_css_class("pm-hint-label")
+        root.append(footer)
 
         key_controller = Gtk.EventControllerKey()
         key_controller.connect("key-pressed", self._on_key_pressed)

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.0
+
+- Refresh every screen with shared rounded surfaces, consistent spacing, clearer headings,
+  and native theme colors, retaining ASH branding and all existing theme choices.
+- Adapt the vault sidebar to narrow windows; add category counts, keyboard shortcuts,
+  useful empty/search states, and prominent entry creation.
+- Clarify setup steps and USB errors, prevent duplicate unlock requests, and keep
+  database opening on a worker with visible progress.
+- Add explicit copy actions for account details and authenticator codes, early password
+  hiding, and visible clipboard feedback using the existing timed session clipboard.
+- Keep generator output and actions visible while its options scroll; preserve both
+  random and template modes and clear generated values when the dialog closes.
+- Apply density/theme changes to open windows when Settings closes, improve editor
+  controls, and test real GTK screen construction and interaction regressions.
+
 ## 0.3.1
 
 - Reject an unwritable setup destination before requesting a master password.

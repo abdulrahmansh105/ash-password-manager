@@ -15,32 +15,50 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, GLib, Gtk
 
 from ..core.recovery.codes import RevealGate
 from .entry_editor import EntryEditorDialog
 from .strategy_editor import StrategyEditorDialog
+from .widgets import icon_button, page_intro, style_window
 
 
 class AccountDetailDialog(Adw.Dialog):
     def __init__(self, app, entry_uuid: str, on_changed) -> None:
-        super().__init__(title="Account Details", content_width=420, content_height=420)
+        super().__init__(title="Account Details", content_width=560, content_height=680)
+        style_window(self, app.settings)
+        self._reveal_timer = None
+        self.connect("closed", self._on_closed)
         self._app = app
         self._entry_uuid = entry_uuid
         self._on_changed = on_changed
         self._reveal_gate = RevealGate(ttl_seconds=10.0)
 
         toolbar_view = Adw.ToolbarView()
-        toolbar_view.add_top_bar(Adw.HeaderBar())
-        self.set_child(toolbar_view)
+        header = Adw.HeaderBar()
+        edit_btn = Gtk.Button(label="Edit")
+        edit_btn.connect("clicked", self._on_edit)
+        header.pack_start(edit_btn)
+        toolbar_view.add_top_bar(header)
+        self._toast = Adw.ToastOverlay()
+        self._toast.set_child(toolbar_view)
+        self.set_child(self._toast)
 
         page = Adw.PreferencesPage()
 
         info_group = Adw.PreferencesGroup(title="Account")
         secrets = self._app.session.vault().get_account_secrets(entry_uuid)
         try:
-            info_group.add(Gtk.Label(label=secrets.display_name, xalign=0))
-            info_group.add(Gtk.Label(label=f"Username: {secrets.username}", xalign=0))
+            page.add(page_intro(secrets.display_name, secrets.service_name or "Account details"))
+            for title, value, field in (("Username / email", secrets.username, "username"), ("Website", secrets.url, "url")):
+                if value:
+                    row = Adw.ActionRow(title=title, subtitle=GLib.markup_escape_text(value))
+                    row.set_subtitle_lines(2)
+                    copy = icon_button("edit-copy-symbolic", f"Copy {title.lower()}", lambda _b, key=field: self._copy_field(key))
+                    copy.set_valign(Gtk.Align.CENTER)
+                    row.add_suffix(copy)
+                    info_group.add(row)
+            notes = secrets.notes
             has_totp = secrets.totp is not None
             has_recovery = bool(secrets.recovery_codes)
             has_username = bool(secrets.username)
@@ -51,12 +69,6 @@ class AccountDetailDialog(Adw.Dialog):
         finally:
             secrets.wipe()
         page.add(info_group)
-
-        edit_group = Adw.PreferencesGroup(title="Edit")
-        edit_btn = Gtk.Button(label="Edit Account", hexpand=True)
-        edit_btn.connect("clicked", self._on_edit)
-        edit_group.add(edit_btn)
-        page.add(edit_group)
 
         auth_flow_group = Adw.PreferencesGroup(
             title="Authentication Flow",
@@ -78,16 +90,36 @@ class AccountDetailDialog(Adw.Dialog):
             ).present(self),
         )
         auth_flow_group.add(edit_strategy_btn)
-        page.add(auth_flow_group)
 
         password_group = Adw.PreferencesGroup(title="Password")
         self._password_label = Gtk.Label(label="••••••••", xalign=0)
         self._password_label.add_css_class("pm-password-row")
+        self._password_label.add_css_class("pm-secret-surface")
+        self._password_label.set_wrap(True)
         password_group.add(self._password_label)
         reveal_pw_btn = Gtk.Button(label="Reveal password (10s)", hexpand=True)
         reveal_pw_btn.connect("clicked", self._on_reveal_password)
-        password_group.add(reveal_pw_btn)
+        self._reveal_pw_btn = reveal_pw_btn
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8, margin_top=8)
+        actions.append(reveal_pw_btn)
+        copy_pw = icon_button("edit-copy-symbolic", "Copy password", lambda _b: self._copy_field("password"))
+        actions.append(copy_pw)
+        password_group.add(actions)
         page.add(password_group)
+
+        if has_totp:
+            totp_group = Adw.PreferencesGroup(title="Authenticator", description="Generate a current one-time sign-in code when you need it.")
+            copy_totp = Gtk.Button(label="Copy current code")
+            copy_totp.connect("clicked", lambda _b: self._copy_field("totp"))
+            totp_group.add(copy_totp)
+            page.add(totp_group)
+        if notes:
+            notes_group = Adw.PreferencesGroup(title="Notes")
+            note_label = Gtk.Label(label=notes, xalign=0, wrap=True, selectable=True)
+            note_label.add_css_class("pm-secret-surface")
+            notes_group.add(note_label)
+            page.add(notes_group)
+        page.add(auth_flow_group)
 
         if has_recovery:
             recovery_group = Adw.PreferencesGroup(title="Recovery Codes")
@@ -123,22 +155,52 @@ class AccountDetailDialog(Adw.Dialog):
 
         EntryEditorDialog(self._app, on_saved=on_saved, entry_uuid=self._entry_uuid).present(self)
 
+    def _copy_field(self, field: str) -> None:
+        from ..core.totp.totp import InvalidTotpSecretError, generate_totp
+        secrets = self._app.session.vault().get_account_secrets(self._entry_uuid)
+        try:
+            if field == "password":
+                value = secrets.password.to_str()
+            elif field == "totp":
+                try:
+                    value = generate_totp(secrets.totp)
+                except (InvalidTotpSecretError, ValueError, TypeError, AttributeError):
+                    self._toast.add_toast(Adw.Toast(title="Unable to generate a code. Check the authenticator settings."))
+                    return
+            else:
+                value = getattr(secrets, field)
+            result = self._app.session.clipboard.copy(value, self._app.settings.clipboard_timeout_seconds())
+            self._toast.add_toast(Adw.Toast(title="Copied to clipboard" if result.copied else "Could not copy to clipboard"))
+        finally:
+            secrets.wipe()
+
+    def _hide_password(self) -> bool:
+        self._password_label.set_text("••••••••")
+        self._reveal_pw_btn.set_label("Reveal password (10s)")
+        self._reveal_timer = None
+        return False
+
     def _on_reveal_password(self, btn: Gtk.Button) -> None:
+        if self._reveal_timer is not None:
+            GLib.source_remove(self._reveal_timer)
+            self._hide_password()
+            return
         secrets = self._app.session.vault().get_account_secrets(self._entry_uuid)
         try:
             self._password_label.set_text(secrets.password.to_str())
         finally:
             secrets.wipe()
-        btn.set_sensitive(False)
+        btn.set_label("Hide password")
+        self._reveal_timer = GLib.timeout_add_seconds(10, self._hide_password)
 
-        from gi.repository import GLib
-
-        def rehide():
-            self._password_label.set_text("••••••••")
-            btn.set_sensitive(True)
-            return False
-
-        GLib.timeout_add_seconds(10, rehide)
+    def _on_closed(self, _dialog) -> None:
+        if self._reveal_timer is not None:
+            GLib.source_remove(self._reveal_timer)
+        self._hide_password()
+        recovery = getattr(self, "_recovery_list", None)
+        if recovery is not None:
+            while (child := recovery.get_row_at_index(0)) is not None:
+                recovery.remove(child)
 
     def _on_reveal_recovery_step1(self, btn: Gtk.Button) -> None:
         self._reveal_gate.request(time.time())
@@ -148,7 +210,10 @@ class AccountDetailDialog(Adw.Dialog):
 
     def _on_reveal_recovery_step2(self, btn: Gtk.Button) -> None:
         if not self._reveal_gate.confirm(time.time()):
-            self._recovery_status.set_text("Reveal expired -- click Reveal again.")
+            self._recovery_status.set_text("Confirmation expired. Click Reveal to try again.")
+            btn.set_label("Reveal Recovery Codes")
+            btn.disconnect_by_func(self._on_reveal_recovery_step2)
+            btn.connect("clicked", self._on_reveal_recovery_step1)
             return
         secrets = self._app.session.vault().get_account_secrets(self._entry_uuid)
         try:

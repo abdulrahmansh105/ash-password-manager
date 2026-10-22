@@ -29,6 +29,7 @@ from ..core.vaults.layout import VaultLayout
 from ..integration import notify
 from ..integration.shortcuts import BindResult, select_and_bind
 from .widgets import accelerator_display_label as _accelerator_display_label
+from .widgets import style_window
 
 _USB_REMOVAL_LABELS = {"lock_immediately": "Lock immediately", "keep_unlocked": "Keep unlocked"}
 _HOTKEY_EXEC_CMD = "ash-password-manager sign-in"
@@ -41,16 +42,18 @@ _IGNORED_CAPTURE_KEYVALS = {
 
 class SettingsDialog(Adw.PreferencesDialog):
     def __init__(self, app) -> None:
-        super().__init__(title="Settings", content_width=520, content_height=560)
+        super().__init__(title="Settings", content_width=680, content_height=720)
+        style_window(self, app.settings)
+        self.set_search_enabled(True)
         self._app = app
         s = app.settings
 
         general = Adw.PreferencesPage(title="General", icon_name="preferences-system-symbolic")
-        general_group = Adw.PreferencesGroup(title="Appearance")
-        self._theme_row = Adw.ComboRow(title="Theme", model=Gtk.StringList.new(list(THEME_CHOICES)))
+        general_group = Adw.PreferencesGroup(title="Make it yours", description="Appearance and security preferences are saved when you close Settings.")
+        self._theme_row = Adw.ComboRow(title="Theme", model=Gtk.StringList.new(["ASH · Light & blue", "Follow system / DMS", "Dark", "Light"]))
         self._theme_row.set_selected(list(THEME_CHOICES).index(s.theme))
         general_group.add(self._theme_row)
-        self._density_row = Adw.ComboRow(title="Density", model=Gtk.StringList.new(["comfortable", "compact"]))
+        self._density_row = Adw.ComboRow(title="Density", model=Gtk.StringList.new(["Comfortable", "Compact"]))
         self._density_row.set_selected(0 if s.ui_density == "comfortable" else 1)
         general_group.add(self._density_row)
         general.add(general_group)
@@ -187,7 +190,9 @@ class SettingsDialog(Adw.PreferencesDialog):
                 wrap=True,
             )
             hint.add_css_class("pm-hint-label")
-            vault_page.add(hint)
+            hint_group = Adw.PreferencesGroup()
+            hint_group.add(hint)
+            vault_page.add(hint_group)
         self.add(vault_page)
 
         if self._layout is not None:
@@ -239,6 +244,19 @@ class SettingsDialog(Adw.PreferencesDialog):
         s.diagnostic_mode = self._diagnostic_row.get_active()
         save_settings(s)
         self._app.session.inactivity_timeout_seconds = s.effective_auto_lock_timeout_seconds()
+        from .theme import remove_ash_theme
+        provider = getattr(self._app, "_ash_theme_provider", None)
+        if provider is not None:
+            remove_ash_theme(provider)
+            self._app._ash_theme_provider = None
+        if hasattr(self._app, "_apply_theme"):
+            self._app._apply_theme()
+            self._app._apply_brand_theme()
+        for window in self._app.get_windows():
+            if s.ui_density == "compact":
+                window.add_css_class("pm-compact")
+            else:
+                window.remove_css_class("pm-compact")
 
     def _on_reset_master_password(self, _btn) -> None:
         new_pw = Adw.PasswordEntryRow(title="New master password")

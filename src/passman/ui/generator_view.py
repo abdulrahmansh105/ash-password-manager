@@ -30,31 +30,54 @@ from ..core.generator import (
     generate_random_password,
 )
 
+from .widgets import page_intro, style_window
+
 
 class GeneratorDialog(Adw.Dialog):
     def __init__(self, parent_window) -> None:
-        super().__init__(title="Password Generator", content_width=420, content_height=420)
+        super().__init__(title="Password Generator", content_width=540, content_height=660)
+        style_window(self, parent_window.app.settings)
+        self._sensitive_entries = []
+        self.connect("closed", self._on_closed)
         self._parent_window = parent_window
         self._clipboard = parent_window.app.session.clipboard
 
         toolbar_view = Adw.ToolbarView()
         toolbar_view.add_top_bar(Adw.HeaderBar())
-        self.set_child(toolbar_view)
+        self._toast = Adw.ToastOverlay()
+        self._toast.set_child(toolbar_view)
+        self.set_child(self._toast)
 
         self._stack = Adw.ViewStack()
         switcher = Adw.ViewSwitcher(stack=self._stack, policy=Adw.ViewSwitcherPolicy.WIDE)
         toolbar_view.add_top_bar(switcher)
         toolbar_view.set_content(self._stack)
 
-        self._stack.add_titled(self._build_template_page(), "template", "Template")
-        self._stack.add_titled(self._build_random_page(), "random", "Random")
+        self._stack.add_titled_with_icon(self._build_random_page(), "random", "Random", "view-refresh-symbolic")
+        self._stack.add_titled_with_icon(self._build_template_page(), "template", "Template", "view-list-symbolic")
+        self._stack.set_visible_child_name("random")
+
+    def _with_result_bar(self, page, generate_btn, result_box, error_label):
+        toolbar = Adw.ToolbarView()
+        toolbar.set_content(page)
+        bar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_start=24, margin_end=24, margin_top=8, margin_bottom=16)
+        bar.append(result_box)
+        bar.append(error_label)
+        bar.append(generate_btn)
+        toolbar.add_bottom_bar(bar)
+        return toolbar
 
     def _build_result_row(self) -> tuple[Gtk.Box, Gtk.Entry, Gtk.Label]:
         box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         entry = Gtk.Entry(editable=False, hexpand=True)
         entry.add_css_class("pm-password-row")
+        entry.set_placeholder_text("Your generated password")
+        self._sensitive_entries.append(entry)
         copy_btn = Gtk.Button.new_from_icon_name("edit-copy-symbolic")
-        error_label = Gtk.Label(xalign=0)
+        copy_btn.set_tooltip_text("Copy generated password")
+        copy_btn.set_sensitive(False)
+        entry.connect("changed", lambda e: copy_btn.set_sensitive(bool(e.get_text())))
+        error_label = Gtk.Label(xalign=0, wrap=True)
         error_label.add_css_class("pm-error-label")
         error_label.set_visible(False)
 
@@ -66,6 +89,8 @@ class GeneratorDialog(Adw.Dialog):
             error_label.set_visible(not status.copied)
             if not status.copied:
                 error_label.set_text(status.error or "Copy failed.")
+            else:
+                self._toast.add_toast(Adw.Toast(title="Password copied"))
 
         copy_btn.connect("clicked", on_copy)
         box.append(entry)
@@ -74,18 +99,20 @@ class GeneratorDialog(Adw.Dialog):
 
     def _build_template_page(self) -> Gtk.Widget:
         page = Adw.PreferencesPage()
-        group = Adw.PreferencesGroup(title="Deterministic template")
+        page.add(page_intro("From your template", "The same template and inputs produce the same password.", "view-list-symbolic", compact=True))
+        group = Adw.PreferencesGroup(title="Template inputs")
 
         template_row = Adw.EntryRow(title="Template")
         username_row = Adw.EntryRow(title="Username")
         service_row = Adw.EntryRow(title="Service name")
+        self._sensitive_entries.extend((template_row, username_row, service_row))
         group.add(template_row)
         group.add(username_row)
         group.add(service_row)
 
         result_box, result_entry, error_label = self._build_result_row()
 
-        generate_btn = Gtk.Button(label="Generate")
+        generate_btn = Gtk.Button(label="Generate password")
         generate_btn.add_css_class("suggested-action")
         generate_btn.add_css_class("pm-generate-button")
 
@@ -105,15 +132,13 @@ class GeneratorDialog(Adw.Dialog):
 
         generate_btn.connect("clicked", on_generate)
 
-        group.add(generate_btn)
-        group.add(result_box)
-        group.add(error_label)
         page.add(group)
-        return page
+        return self._with_result_bar(page, generate_btn, result_box, error_label)
 
     def _build_random_page(self) -> Gtk.Widget:
         page = Adw.PreferencesPage()
-        group = Adw.PreferencesGroup(title="Random (CSPRNG)")
+        page.add(page_intro("A stronger password", "Create a unique password with the characters you choose.", compact=True))
+        group = Adw.PreferencesGroup(title="Password options")
 
         length_row = Adw.SpinRow.new_with_range(8, 128, 1)
         length_row.set_title("Length")
@@ -130,7 +155,7 @@ class GeneratorDialog(Adw.Dialog):
 
         result_box, result_entry, error_label = self._build_result_row()
 
-        generate_btn = Gtk.Button(label="Generate")
+        generate_btn = Gtk.Button(label="Generate password")
         generate_btn.add_css_class("suggested-action")
         generate_btn.add_css_class("pm-generate-button")
 
@@ -153,8 +178,9 @@ class GeneratorDialog(Adw.Dialog):
 
         generate_btn.connect("clicked", on_generate)
 
-        group.add(generate_btn)
-        group.add(result_box)
-        group.add(error_label)
         page.add(group)
-        return page
+        return self._with_result_bar(page, generate_btn, result_box, error_label)
+
+    def _on_closed(self, _dialog) -> None:
+        for entry in self._sensitive_entries:
+            entry.set_text("")

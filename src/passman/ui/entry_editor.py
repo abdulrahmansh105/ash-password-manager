@@ -29,6 +29,7 @@ from ..core.totp.totp import (
 )
 from ..core.vault.kdbx import VaultError
 from ..core.vault.models import CATEGORY_CHOICES, CATEGORY_LABELS, DEFAULT_CATEGORY
+from .widgets import page_intro, style_window
 
 
 def _scan_qr_secret(path: str) -> str:
@@ -49,7 +50,8 @@ def _scan_qr_secret(path: str) -> str:
 
 class TotpSetupDialog(Adw.Dialog):
     def __init__(self, on_configured) -> None:
-        super().__init__(title="Add Authenticator (TOTP)", content_width=380, content_height=260)
+        super().__init__(title="Add Authenticator (TOTP)", content_width=480, content_height=500)
+        style_window(self)
         self._on_configured = on_configured
         self._config: TotpConfig | None = None
 
@@ -58,7 +60,8 @@ class TotpSetupDialog(Adw.Dialog):
         self.set_child(toolbar_view)
 
         page = Adw.PreferencesPage()
-        group = Adw.PreferencesGroup(title="Manual secret entry")
+        page.add(page_intro("Add an authenticator", "Enter the setup key from your service, or import its QR code.", "channel-secure-symbolic"))
+        group = Adw.PreferencesGroup(title="Setup key")
 
         self._secret_row = Adw.PasswordEntryRow(title="Secret (base32)")
         group.add(self._secret_row)
@@ -128,7 +131,8 @@ class TotpSetupDialog(Adw.Dialog):
 
 class RecoveryCodesDialog(Adw.Dialog):
     def __init__(self, on_saved) -> None:
-        super().__init__(title="Add Recovery Codes", content_width=380, content_height=320)
+        super().__init__(title="Add Recovery Codes", content_width=480, content_height=440)
+        style_window(self)
         self._on_saved = on_saved
 
         toolbar_view = Adw.ToolbarView()
@@ -165,8 +169,9 @@ class RecoveryCodesDialog(Adw.Dialog):
 class EntryEditorDialog(Adw.Dialog):
     def __init__(self, app, on_saved, entry_uuid: str | None = None) -> None:
         is_edit = entry_uuid is not None
-        super().__init__(title="Edit Entry" if is_edit else "Create Entry", content_width=460, content_height=560)
+        super().__init__(title="Edit Entry" if is_edit else "Create Entry", content_width=560, content_height=720)
         self._app = app
+        style_window(self)
         self._on_saved = on_saved
         self._entry_uuid = entry_uuid
         self._totp_config: TotpConfig | None = None
@@ -178,7 +183,8 @@ class EntryEditorDialog(Adw.Dialog):
 
         page = Adw.PreferencesPage()
 
-        identity_group = Adw.PreferencesGroup(title="Account")
+        page.add(page_intro("Edit your entry" if is_edit else "A place for your account", "Keep the details you need in one encrypted entry."))
+        identity_group = Adw.PreferencesGroup(title="Account details")
         self._name_row = Adw.EntryRow(title="Account Name")
         self._service_row = Adw.EntryRow(title="Website / Service")
         self._username_row = Adw.EntryRow(title="Username / Email")
@@ -216,6 +222,7 @@ class EntryEditorDialog(Adw.Dialog):
             description="One application window class or re: pattern per line. Exact window class matches can sign in automatically; other matches require confirmation.",
         )
         self._identifiers_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD)
+        self._identifiers_view.add_css_class("pm-password-row")
         identifiers_scroll = Gtk.ScrolledWindow(min_content_height=60)
         identifiers_scroll.set_child(self._identifiers_view)
         identifiers_group.add(identifiers_scroll)
@@ -253,7 +260,13 @@ class EntryEditorDialog(Adw.Dialog):
         self._save_error = Gtk.Label(xalign=0, wrap=True)
         self._save_error.add_css_class("pm-error-label")
         self._save_error.set_visible(False)
-        page.add(self._save_error)
+        error_group = Adw.PreferencesGroup()
+        error_group.add(self._save_error)
+        page.add(error_group)
+        cancel_btn = Gtk.Button(label="Cancel")
+        cancel_btn.connect("clicked", lambda _b: self.close())
+        bottom_bar.set_spacing(12)
+        bottom_bar.append(cancel_btn)
         bottom_bar.append(save_btn)
         toolbar_view.add_bottom_bar(bottom_bar)
 

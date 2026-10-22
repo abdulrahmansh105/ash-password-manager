@@ -63,6 +63,8 @@ from ..widgets import (
     build_brand_header,
     build_local_key_offer_content,
     build_step_dots,
+    form_page,
+    style_window,
 )
 
 APP_ID = "dev.ash.PasswordManager.Setup"
@@ -78,7 +80,8 @@ _IGNORED_CAPTURE_KEYVALS = {
 
 class SetupWindow(Adw.ApplicationWindow):
     def __init__(self, app: SetupApp) -> None:
-        super().__init__(application=app, default_width=460, default_height=580, title="ASH Password Manager")
+        super().__init__(application=app, default_width=540, default_height=680, title="ASH Password Manager")
+        style_window(self)
         self._flow = SetupFlow()
         self.result_handle: VaultHandle | None = None
         self.result_record: VaultRecord | None = None
@@ -117,20 +120,36 @@ class SetupWindow(Adw.ApplicationWindow):
             margin_top=8, margin_bottom=24, margin_start=32, margin_end=32,
         )
         outer.append(build_step_dots(_STEP_COUNT, step_index))
+        steps = ("Choose your USB", "Protect your vault", "Trust this device", "Set a shortcut", "USB protection", "Ready to finish")
+        caption = Gtk.Label(label=f"STEP {step_index + 1} OF {_STEP_COUNT}  ·  {steps[step_index]}")
+        caption.add_css_class("pm-eyebrow")
+        outer.append(caption)
         outer.append(body)
-        scroller = Gtk.ScrolledWindow(vexpand=True)
-        scroller.set_child(outer)
-        toolbar_view.set_content(scroller)
+        toolbar_view.set_content(form_page(outer, 520))
         return Adw.NavigationPage(title=title, child=toolbar_view)
 
     def _build_progress_page(self, message: str) -> Adw.NavigationPage:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16, valign=Gtk.Align.CENTER)
         box.append(Gtk.Spinner(spinning=True, width_request=32, height_request=32, halign=Gtk.Align.CENTER))
-        box.append(Gtk.Label(label=message, xalign=0.5))
+        heading = Gtk.Label(label=message, xalign=0.5, wrap=True)
+        heading.add_css_class("title-2")
+        box.append(heading)
+        detail = Gtk.Label(label="Please keep your USB connected while this finishes.", wrap=True)
+        detail.add_css_class("pm-subtitle")
+        box.append(detail)
+        progress = Gtk.ProgressBar(margin_start=48, margin_end=48)
+        progress.set_pulse_step(0.08)
+        box.append(progress)
+        def pulse():
+            if not progress.get_root():
+                return False
+            progress.pulse()
+            return True
+        GLib.timeout_add(150, pulse)
         toolbar_view = Adw.ToolbarView()
         toolbar_view.add_top_bar(Adw.HeaderBar(show_title=False))
         toolbar_view.set_content(box)
-        return Adw.NavigationPage(title="Working…", child=toolbar_view)
+        return Adw.NavigationPage(title="Working…", child=toolbar_view, can_pop=False)
 
     def _show_error(self, message: str) -> None:
         status = Adw.StatusPage(title="Something went wrong", description=message, icon_name="dialog-error-symbolic")
@@ -143,20 +162,29 @@ class SetupWindow(Adw.ApplicationWindow):
 
     def _build_usb_selection_page(self) -> Adw.NavigationPage:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
-        box.append(build_brand_header("Sign in"))
-        box.append(Gtk.Label(label="Select your password USB", xalign=0.5))
+        box.append(build_brand_header("Your passwords. Your USB. Your control."))
+        # Existing vaults are discovered before any setup credentials are requested.
+        heading = Gtk.Label(label="Choose your password USB", xalign=0)
+        heading.add_css_class("title-3")
+        box.append(heading)
+        hint = Gtk.Label(label="Connect an existing vault or set up a new one.", xalign=0, wrap=True)
+        hint.add_css_class("pm-subtitle")
+        box.append(hint)
 
         self._usb_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
         self._usb_list.add_css_class("boxed-list")
         box.append(self._usb_list)
-        self._usb_status_label = Gtk.Label(xalign=0.5, wrap=True)
+        self._usb_status_label = Gtk.Label(xalign=0, wrap=True, visible=False)
+        self._usb_status_label.add_css_class("pm-error-label")
+        self._usb_status_label.connect("notify::label", lambda label, _p: label.set_visible(bool(label.get_label())))
         box.append(self._usb_status_label)
 
-        refresh_btn = Gtk.Button(label="Refresh")
+        refresh_btn = Gtk.Button(label="Refresh drives", halign=Gtk.Align.END)
+        refresh_btn.add_css_class("flat")
         refresh_btn.connect("clicked", lambda _b: self._refresh_usb_list())
         box.append(refresh_btn)
 
-        vault_name_group = Adw.PreferencesGroup()
+        vault_name_group = Adw.PreferencesGroup(description="Used when creating a new vault.")
         self._vault_name_row = Adw.EntryRow(title="Vault name")
         self._vault_name_row.set_text("My Passwords")
         vault_name_group.add(self._vault_name_row)
@@ -164,13 +192,16 @@ class SetupWindow(Adw.ApplicationWindow):
 
         continue_btn = Gtk.Button(label="Continue", hexpand=True)
         continue_btn.add_css_class("suggested-action")
+        continue_btn.add_css_class("pm-primary")
         continue_btn.connect("clicked", self._on_usb_selected)
         box.append(continue_btn)
 
+        self._usb_continue_btn = continue_btn
         self._refresh_usb_list()
-        return self._page("Sign in", 0, box)
+        return self._page("Set up your vault", 0, box)
 
     def _refresh_usb_list(self) -> None:
+        self._usb_continue_btn.set_sensitive(False)
         while (row := self._usb_list.get_row_at_index(0)) is not None:
             self._usb_list.remove(row)
         try:
@@ -183,10 +214,13 @@ class SetupWindow(Adw.ApplicationWindow):
             return
         self._usb_status_label.set_label("")
         for choice in choices:
-            row = Adw.ActionRow(title=choice.label)
+            row = Adw.ActionRow(title=GLib.markup_escape_text(choice.label))
+            row.add_prefix(Gtk.Image.new_from_icon_name("drive-removable-media-symbolic"))
+            row.set_title_lines(2)
             row.drive_choice = choice
             self._usb_list.append(row)
         self._usb_list.select_row(self._usb_list.get_row_at_index(0))
+        self._usb_continue_btn.set_sensitive(True)
 
     def _on_usb_selected(self, _btn) -> None:
         row = self._usb_list.get_selected_row()
@@ -269,6 +303,7 @@ class SetupWindow(Adw.ApplicationWindow):
         )
         continue_btn = Gtk.Button(label="Continue to Login", hexpand=True)
         continue_btn.add_css_class("suggested-action")
+        continue_btn.add_css_class("pm-primary")
 
         def on_continue(_btn) -> None:
             vault_id = data.get("vault_id")
@@ -354,11 +389,12 @@ class SetupWindow(Adw.ApplicationWindow):
                 )
             )
 
-        group = Adw.PreferencesGroup()
-        self._password_row = Adw.PasswordEntryRow(title="Password")
+        group = Adw.PreferencesGroup(description=f"Use at least {MIN_LENGTH} characters. A longer, unique passphrase is easier to remember.")
+        self._password_row = Adw.PasswordEntryRow(title="Master password")
         self._password_row.connect("notify::text", self._on_password_changed)
         group.add(self._password_row)
         self._confirm_row = Adw.PasswordEntryRow(title="Confirm Password")
+        self._confirm_row.connect("entry-activated", self._on_password_continue)
         group.add(self._confirm_row)
         box.append(group)
 
@@ -371,6 +407,7 @@ class SetupWindow(Adw.ApplicationWindow):
 
         continue_btn = Gtk.Button(label="Continue", hexpand=True)
         continue_btn.add_css_class("suggested-action")
+        continue_btn.add_css_class("pm-primary")
         continue_btn.connect("clicked", self._on_password_continue)
         box.append(continue_btn)
         return self._page("Create Password", 1, box)
@@ -503,6 +540,8 @@ class SetupWindow(Adw.ApplicationWindow):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         box.append(build_brand_header("Open Manager Hotkey"))
         self._hotkey_label = Gtk.Label(label=accelerator_display_label(self._hotkey_accelerator), xalign=0.5)
+        self._hotkey_label.add_css_class("pm-secret-surface")
+        self._hotkey_label.add_css_class("title-2")
         box.append(self._hotkey_label)
 
         record_btn = Gtk.Button(label="Record Different Shortcut...", hexpand=True)
@@ -511,6 +550,7 @@ class SetupWindow(Adw.ApplicationWindow):
 
         continue_btn = Gtk.Button(label="Continue", hexpand=True)
         continue_btn.add_css_class("suggested-action")
+        continue_btn.add_css_class("pm-primary")
         continue_btn.connect("clicked", self._on_hotkey_continue)
         box.append(continue_btn)
         return self._page("Hotkey", 3, box)
@@ -568,6 +608,7 @@ class SetupWindow(Adw.ApplicationWindow):
         )
         continue_btn = Gtk.Button(label="Continue", hexpand=True)
         continue_btn.add_css_class("suggested-action")
+        continue_btn.add_css_class("pm-primary")
         continue_btn.connect("clicked", lambda _b: self._nav.push(self._build_usb_removal_choice_page()))
         box.append(continue_btn)
         return self._page("USB Removal", 4, box)
@@ -579,12 +620,15 @@ class SetupWindow(Adw.ApplicationWindow):
         lock_row = Gtk.CheckButton(label="Lock immediately")
         keep_row = Gtk.CheckButton(label="Keep unlocked", group=lock_row)
         lock_row.set_active(True)
+        lock_row.add_css_class("pm-choice")
+        keep_row.add_css_class("pm-choice")
         box.append(lock_row)
         box.append(keep_row)
         self._usb_removal_lock_row = lock_row
 
         finish_btn = Gtk.Button(label="Finish Setup", hexpand=True)
         finish_btn.add_css_class("suggested-action")
+        finish_btn.add_css_class("pm-primary")
         finish_btn.connect("clicked", self._on_finish_setup)
         box.append(finish_btn)
         return self._page("USB Removal", 5, box)

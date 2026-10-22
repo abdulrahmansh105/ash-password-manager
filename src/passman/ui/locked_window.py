@@ -13,6 +13,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio
 
+from .widgets import style_window
+
 APP_ID = "dev.ash.PasswordManager.Locked"
 
 
@@ -34,7 +36,9 @@ def show_locked_window(reason: str) -> int:
 
 class LockedWindow(Adw.Window):
     def __init__(self, application: Adw.Application, reason: str) -> None:
-        super().__init__(application=application, default_width=380, default_height=220, modal=False)
+        super().__init__(application=application, default_width=460, default_height=400, title="ASH Password Manager", modal=False)
+
+        style_window(self)
 
         # Adw.Window has no set_titlebar() (unlike plain Gtk.Window) --
         # confirmed live: calling it is a fatal
@@ -48,7 +52,7 @@ class LockedWindow(Adw.Window):
         toolbar_view.add_top_bar(Adw.HeaderBar(show_title=False))
 
         status = Adw.StatusPage(
-            title="Password Manager is locked",
+            title="Your vault is locked",
             description=reason or "Insert your USB key to continue.",
             icon_name="channel-secure-symbolic",
         )

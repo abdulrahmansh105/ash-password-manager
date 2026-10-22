@@ -46,6 +46,7 @@ from ..core.auth.strategy_editor import (
 from ..core.auth.strategy_presets import load_custom_presets, save_custom_preset
 from ..core.auth.test_run import run_test
 from ..input import select_backend
+from .widgets import style_window
 
 _ACTION_ORDER = [
     StepAction.TYPE_USERNAME,
@@ -82,6 +83,9 @@ class StrategyStepRow(Gtk.Box):
         dropdown = Gtk.DropDown(model=action_list, selected=_ACTION_ORDER.index(step.action))
         dropdown.set_hexpand(True)
         dropdown.connect("notify::selected", lambda dd, _p: editor._on_action_changed(index, _ACTION_ORDER[dd.get_selected()]))
+        number = Gtk.Label(label=f"{index + 1:02}")
+        number.add_css_class("pm-step-number")
+        top.append(number)
         top.append(dropdown)
 
         enabled_switch = Gtk.Switch(active=step.enabled, valign=Gtk.Align.CENTER)
@@ -98,6 +102,10 @@ class StrategyStepRow(Gtk.Box):
             btn = Gtk.Button.new_from_icon_name(icon)
             btn.add_css_class("flat")
             btn.set_tooltip_text(tooltip)
+            if tooltip == "Move up":
+                btn.set_sensitive(index > 0)
+            elif tooltip == "Move down":
+                btn.set_sensitive(index < len(editor._steps) - 1)
             btn.connect("clicked", handler)
             top.append(btn)
 
@@ -165,6 +173,7 @@ class StrategyEditorDialog(Adw.Dialog):
         on_saved,
     ) -> None:
         super().__init__(title="Auto-Type Strategy", content_width=520, content_height=640)
+        style_window(self, app.settings)
         self._app = app
         self._entry_uuid = entry_uuid
         self._display_name = display_name
@@ -206,7 +215,7 @@ class StrategyEditorDialog(Adw.Dialog):
 
         # -- preview -------------------------------------------------------
         self._preview_label = Gtk.Label(xalign=0, wrap=True)
-        self._preview_label.add_css_class("pm-hint-label")
+        self._preview_label.add_css_class("pm-secret-surface")
         outer.append(self._preview_label)
 
         # -- validation banner ----------------------------------------------
@@ -221,7 +230,7 @@ class StrategyEditorDialog(Adw.Dialog):
         scroller.set_child(self._steps_box)
         outer.append(scroller)
 
-        add_btn = Gtk.Button(label="+ Add Step")
+        add_btn = Gtk.Button(label="Add step")
         add_btn.connect("clicked", self._on_add_step)
         outer.append(add_btn)
 

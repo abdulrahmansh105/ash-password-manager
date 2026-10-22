@@ -41,11 +41,11 @@ from ...core.flows.login_machine import (
 from ...core.platforminfo import default_device_label
 from ...core.security.logging import get_logger, safe_extra
 from ...core.security.memory import SecretBytes
-from ...core.vault.kdbx import VaultHandle, VaultOpenError, open_vault
+from ...core.vault.kdbx import VaultHandle, open_vault
 from ...core.vaults.layout import VaultLayout
 from ...core.vaults.registry import VaultRecord, touch_last_seen
 from ...integration import notify
-from ..widgets import build_brand_header, build_local_key_offer_content
+from ..widgets import build_brand_header, build_local_key_offer_content, form_page, style_window
 
 APP_ID = "dev.ash.PasswordManager.Login"
 _log = get_logger(__name__)
@@ -92,7 +92,9 @@ class LoginWindow(Adw.ApplicationWindow):
     authentication."""
 
     def __init__(self, app: LoginApp, record: VaultRecord, mountpoint: str) -> None:
-        super().__init__(application=app, default_width=420, default_height=460, title="ASH Password Manager")
+        super().__init__(application=app, default_width=500, default_height=600, title="ASH Password Manager")
+        style_window(self)
+        self._auth_busy = False
         self._record = record
         self._mountpoint = mountpoint
         self._layout = VaultLayout.at(mountpoint, record.container_rel_path)
@@ -104,7 +106,7 @@ class LoginWindow(Adw.ApplicationWindow):
         self.set_content(toolbar_view)
 
         self._stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE)
-        toolbar_view.set_content(self._stack)
+        toolbar_view.set_content(form_page(self._stack, 500))
 
         self._stack.add_named(self._build_checking_page(), "checking")
         self._stack.add_named(self._build_password_page(), "password")
@@ -118,7 +120,7 @@ class LoginWindow(Adw.ApplicationWindow):
 
     def _build_checking_page(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16, valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER)
-        box.append(build_brand_header("Login"))
+        box.append(build_brand_header("Welcome back"))
         self._checking_detail = Gtk.Label(label="USB detected", xalign=0.5)
         self._checking_detail.add_css_class("ash-subtitle")
         box.append(self._checking_detail)
@@ -130,24 +132,27 @@ class LoginWindow(Adw.ApplicationWindow):
 
     def _build_password_page(self) -> Gtk.Widget:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_top=24, margin_bottom=24, margin_start=32, margin_end=32)
-        box.append(build_brand_header("Login"))
-        self._password_note = Gtk.Label(label="USB detected", xalign=0.5)
-        self._password_note.add_css_class("ash-subtitle")
+        box.append(build_brand_header("Welcome back"))
+        self._password_note = Gtk.Label(label=self._record.name, xalign=0.5, wrap=True)
+        self._password_note.add_css_class("pm-status-chip")
+        self._password_note.set_halign(Gtk.Align.CENTER)
         box.append(self._password_note)
 
         group = Adw.PreferencesGroup()
-        self._password_row = Adw.PasswordEntryRow(title="Password")
+        self._password_row = Adw.PasswordEntryRow(title="Master password")
         self._password_row.connect("entry-activated", lambda _r: self._on_submit_password(None))
         group.add(self._password_row)
         box.append(group)
 
-        self._password_error = Gtk.Label(xalign=0)
+        self._password_error = Gtk.Label(xalign=0, wrap=True)
         self._password_error.add_css_class("pm-error-label")
         self._password_error.set_visible(False)
         box.append(self._password_error)
 
-        login_btn = Gtk.Button(label="Login", hexpand=True)
+        login_btn = Gtk.Button(label="Unlock vault", hexpand=True)
+        self._login_btn = login_btn
         login_btn.add_css_class("suggested-action")
+        login_btn.add_css_class("pm-primary")
         login_btn.connect("clicked", self._on_submit_password)
         box.append(login_btn)
 
@@ -188,7 +193,7 @@ class LoginWindow(Adw.ApplicationWindow):
     # -- flow driving --------------------------------------------------------
 
     def _start_auto_login(self) -> bool:
-        run_blocking_async(lambda: attempt_automatic_login(self._flow), self._on_auto_login_result)
+        run_blocking_async(lambda: attempt_automatic_login(self._flow), self._on_auto_login_result, on_error=self._on_auth_error)
         return False
 
     def _on_auto_login_result(self, outcome: LoginOutcome) -> None:
@@ -206,15 +211,18 @@ class LoginWindow(Adw.ApplicationWindow):
         self._show_failure(outcome.failure)
 
     def _on_use_local_key(self, _btn) -> None:
+        if self._auth_busy:
+            return
         self._password_error.set_visible(False)
-        self._local_key_btn.set_sensitive(False)
+        self._set_auth_busy(True)
         run_blocking_async(
             lambda: self._flow.try_local_key(self._record, self._mountpoint),
             self._on_manual_local_key_result,
+            on_error=self._on_auth_error,
         )
 
     def _on_manual_local_key_result(self, outcome: LoginOutcome) -> None:
-        self._local_key_btn.set_sensitive(True)
+        self._set_auth_busy(False)
         if outcome.state == LoginState.MANAGER:
             self._finish_unlock(outcome)
             return
@@ -238,19 +246,37 @@ class LoginWindow(Adw.ApplicationWindow):
         dialog.present(self)
 
     def _on_submit_password(self, _btn) -> None:
+        if self._auth_busy:
+            return
         password_text = self._password_row.get_text()
         if not password_text:
             return
         self._password_error.set_visible(False)
-        self._password_row.set_sensitive(False)
+        self._set_auth_busy(True)
         password = SecretBytes(password_text)
         run_blocking_async(
             lambda: self._flow.submit_password(self._record, self._mountpoint, password),
             self._on_password_result,
+            on_error=self._on_auth_error,
         )
 
+    def _set_auth_busy(self, busy: bool) -> None:
+        self._auth_busy = busy
+        self._password_row.set_sensitive(not busy)
+        self._login_btn.set_sensitive(not busy)
+        self._local_key_btn.set_sensitive(not busy)
+        self._login_btn.set_label("Unlocking…" if busy else "Unlock vault")
+
+    def _on_auth_error(self, _error: Exception) -> None:
+        self._set_auth_busy(False)
+        self._password_error.set_text("Unable to unlock. Check your USB connection and try again.")
+        self._password_error.set_visible(True)
+        self._password_row.set_text("")
+        self._stack.set_visible_child_name("password")
+        self._password_row.grab_focus()
+
     def _on_password_result(self, outcome: LoginOutcome) -> None:
-        self._password_row.set_sensitive(True)
+        self._set_auth_busy(False)
         if outcome.state == LoginState.MANAGER:
             self._finish_unlock(outcome)
             return
@@ -260,16 +286,26 @@ class LoginWindow(Adw.ApplicationWindow):
         self._password_row.grab_focus()
 
     def _finish_unlock(self, outcome: LoginOutcome) -> None:
-        vms = outcome.vms
-        try:
-            password_str = vms_to_kdbx_password(vms)
-            handle = open_vault(self._layout.kdbx_path, self._layout.keyfile_path, SecretBytes(password_str))
-        except VaultOpenError:
-            _log.warning("vault open failed after key-slot unlock", extra=safe_extra(event="vault_open_failed"))
-            vms.wipe()
-            self._show_failure(LoginFailureReason.VAULT_OPEN_FAILED)
-            return
+        self._set_auth_busy(True)
+        self._checking_status.set_text("Opening your encrypted vault…")
+        self._stack.set_visible_child_name("checking")
 
+        def work():
+            password_str = vms_to_kdbx_password(outcome.vms)
+            return open_vault(self._layout.kdbx_path, self._layout.keyfile_path, SecretBytes(password_str))
+
+        def failed(_error):
+            outcome.vms.wipe()
+            self._set_auth_busy(False)
+            _log.warning("vault open failed after key-slot unlock", extra=safe_extra(event="vault_open_failed"))
+            self._show_failure(LoginFailureReason.VAULT_OPEN_FAILED)
+
+        run_blocking_async(work, lambda handle: self._on_vault_opened(outcome, handle), on_error=failed)
+
+    def _on_vault_opened(self, outcome: LoginOutcome, handle: VaultHandle) -> None:
+        self._set_auth_busy(False)
+        self._password_row.set_text("")
+        vms = outcome.vms
         touch_last_seen(self._record.vault_id)
 
         if not outcome.used_local_key and not local_key_store.has_local_key(self._record.vault_id):
