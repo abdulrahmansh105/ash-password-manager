@@ -14,6 +14,7 @@ argv-shape assertions on ``integration.usb.udisks.unlock``).
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +23,25 @@ from ..vaults.layout import DEFAULT_CONTAINER_DIRNAME, VaultLayout
 
 class SetupUsbError(Exception):
     """User-facing: no secrets, no stack traces (spec section 25)."""
+
+
+def require_setup_write_access(mountpoint: str, container_rel_path: str, *, adopting: bool = False) -> None:
+    """Check the setup destination before asking the user for credentials.
+
+    New-vault staging needs the parent directory; adoption needs the
+    existing container. This check never changes USB permissions or files.
+    Actual provisioning still handles write failures, including races.
+    """
+    layout = VaultLayout.at(mountpoint, container_rel_path)
+    parent = layout.container_dir if adopting else layout.container_dir.parent
+    while not parent.exists() and parent != parent.parent:
+        parent = parent.parent
+    if not parent.is_dir() or not os.access(parent, os.W_OK | os.X_OK):
+        raise SetupUsbError(
+            "Your account cannot write to the selected USB vault location. "
+            "Make this location writable for your account, then select the USB again. "
+            "No vault has been created or changed."
+        )
 
 
 @dataclass(frozen=True)

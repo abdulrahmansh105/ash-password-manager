@@ -64,16 +64,26 @@ def run_blocking_async(
     work_fn: Callable[[], T],
     on_done: Callable[[T], None],
     idle_scheduler: IdleScheduler = glib_idle_scheduler,
+    on_error: Callable[[Exception], None] | None = None,
 ) -> threading.Thread:
     """Runs ``work_fn()`` on a new background thread and delivers its
     return value to ``on_done`` on the caller's thread via
     ``idle_scheduler``. Generic escape hatch for blocking operations
     (active-window detection, a strategy test-run) that must not run on
     the GTK main thread but only need to report a final result, not
-    step-by-step progress."""
+    step-by-step progress. When supplied, ``on_error`` receives worker
+    exceptions through that same scheduler so progress UI can recover."""
 
     def worker() -> None:
-        result = work_fn()
+        try:
+            result = work_fn()
+        except Exception as error:
+            if on_error is None:
+                raise
+            # Capture explicitly: Python clears the exception variable after
+            # this block, before a queued main-thread callback usually runs.
+            idle_scheduler(lambda failure=error: on_error(failure))
+            return
         idle_scheduler(lambda: on_done(result))
 
     thread = threading.Thread(target=worker, daemon=True, name="passman-bg-worker")

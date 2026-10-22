@@ -157,17 +157,18 @@ def create_new_vault(
     """The whole VAULT_CREATION + DEVICE_REGISTRATION setup-flow step
     (spec section 26), as one all-or-nothing operation."""
     layout = VaultLayout.at(mountpoint, container_rel_path)
-    if layout.container_dir.exists() and any(layout.container_dir.iterdir()):
-        raise VaultAlreadyExistsError(f"A vault or file already exists at {layout.container_dir}")
-
     vault_id = _new_vault_id()
-    layout.container_dir.parent.mkdir(parents=True, exist_ok=True)
-    work_dir = Path(tempfile.mkdtemp(prefix=f".{layout.container_dir.name}.setup-", dir=layout.container_dir.parent))
-    work_layout = VaultLayout(container_dir=work_dir)
-
+    work_layout: VaultLayout | None = None
     identity: DeviceIdentity | None = None
     local_secret: SecretBytes | None = None
     try:
+        if layout.container_dir.exists() and any(layout.container_dir.iterdir()):
+            raise VaultAlreadyExistsError(f"A vault or file already exists at {layout.container_dir}")
+        # Staging creation can itself fail on a root-owned or read-only USB.
+        # It must use the same error/rollback path as subsequent writes.
+        layout.container_dir.parent.mkdir(parents=True, exist_ok=True)
+        work_dir = Path(tempfile.mkdtemp(prefix=f".{layout.container_dir.name}.setup-", dir=layout.container_dir.parent))
+        work_layout = VaultLayout(container_dir=work_dir)
         work_layout.ensure_dirs()
         _write_vault_json(work_layout, vault_id, name)
 
@@ -191,10 +192,19 @@ def create_new_vault(
         health.update_integrity_manifest(work_layout)
         layout.container_dir.parent.mkdir(parents=True, exist_ok=True)
         os.replace(work_layout.container_dir, layout.container_dir)
+    except VaultAlreadyExistsError:
+        raise
     except Exception as exc:
-        shutil.rmtree(work_layout.container_dir, ignore_errors=True)
+        if work_layout is not None:
+            shutil.rmtree(work_layout.container_dir, ignore_errors=True)
         if enroll_local_key:
             local_key.forget_local_key(vault_id)
+        if isinstance(exc, PermissionError):
+            raise ProvisioningError(
+                "Write permission was denied while creating the vault. "
+                "Make the USB vault location writable for your account, then try again. "
+                "No partial vault was left behind."
+            ) from exc
         raise ProvisioningError(
             f"Vault creation failed ({type(exc).__name__}); no partial vault was left behind."
         ) from exc

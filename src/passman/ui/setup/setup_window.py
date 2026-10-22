@@ -37,6 +37,7 @@ from ...core.flows.usb_setup import (
     SetupUsbError,
     discover_container,
     prepare_mountpoint,
+    require_setup_write_access,
 )
 from ...core.security.memory import SecretBytes
 from ...core.security.password_strength import (
@@ -197,7 +198,11 @@ class SetupWindow(Adw.ApplicationWindow):
         self._flow.advance_to(SetupState.USB_SELECTION)
 
         self._nav.push(self._build_progress_page("Preparing USB…"))
-        run_blocking_async(self._prepare_usb_work, self._on_usb_prepared)
+        run_blocking_async(self._prepare_usb_work, self._on_usb_prepared, on_error=self._on_usb_prepare_error)
+
+    def _on_usb_prepare_error(self, error: Exception) -> None:
+        message = f"Could not prepare this USB ({type(error).__name__}). Check the device and try again."
+        self._on_usb_prepared((None, None, None, None, message))
 
     def _prepare_usb_work(self):
         try:
@@ -212,6 +217,8 @@ class SetupWindow(Adw.ApplicationWindow):
             # a legacy single-vault registration's "Authentication/")
             # is still found automatically. See core.flows.usb_setup.
             container_rel_path, kind = discover_container(mountpoint)
+            if kind != "ash":
+                require_setup_write_access(mountpoint, container_rel_path, adopting=kind == "foreign")
             return identity, mountpoint, container_rel_path, kind, None
         except SetupUsbError as exc:
             return None, None, None, None, str(exc)
@@ -416,7 +423,15 @@ class SetupWindow(Adw.ApplicationWindow):
         self._flow.advance_to(SetupState.VAULT_CREATION)
         self._flow.advance_to(SetupState.DEVICE_REGISTRATION)
         self._nav.push(self._build_progress_page("Creating your vault…"))
-        run_blocking_async(self._commit_work, self._on_commit_done)
+        run_blocking_async(self._commit_work, self._on_commit_done, on_error=self._on_commit_error)
+
+    def _on_commit_error(self, error: Exception) -> None:
+        message = (
+            f"Setup could not finish ({type(error).__name__}). "
+            "Check that the USB is connected and writable. "
+            "If a vault was already created, close setup and reopen Sign in to recover it."
+        )
+        self._on_commit_done((None, message))
 
     def _commit_work(self):
         draft = self._flow.draft
@@ -469,9 +484,10 @@ class SetupWindow(Adw.ApplicationWindow):
         payload, error = result
         self._nav.pop()
         if error:
-            # create_new_vault/adopt_existing_vault guarantee zero
-            # on-disk trace on failure (see provisioning.py) -- rewind
-            # the in-memory wizard state to match, so the user can fix
+            # Provisioning failures roll back their own changes. A later
+            # reopen/registration failure can leave a complete vault, which
+            # must be preserved and recovered through Sign in. Rewind the
+            # in-memory wizard state so the user can fix
             # the actual problem (e.g. an unwritable USB) and retry
             # from this same page instead of restarting the wizard.
             self._flow.state = SetupState.LOCAL_KEY_OPTIONAL
@@ -519,7 +535,10 @@ class SetupWindow(Adw.ApplicationWindow):
     def _on_hotkey_continue(self, _btn) -> None:
         self._flow.draft.hotkey_accelerator = self._hotkey_accelerator
         self._nav.push(self._build_progress_page("Applying shortcut…"))
-        run_blocking_async(self._apply_hotkey_work, self._on_hotkey_applied)
+        run_blocking_async(
+            self._apply_hotkey_work, self._on_hotkey_applied,
+            on_error=lambda _error: self._on_hotkey_applied(None),
+        )
 
     def _apply_hotkey_work(self):
         backend, outcome = select_and_bind(self._hotkey_accelerator, _HOTKEY_EXEC_CMD, "Open ASH Password Manager")

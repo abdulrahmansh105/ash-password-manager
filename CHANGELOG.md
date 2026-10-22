@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1
+
+- Reject an unwritable setup destination before requesting a master password.
+- Report permission failures when staging a new vault, including root-owned
+  USB filesystems, instead of leaving the wizard on “Creating your vault”.
+- Deliver unexpected setup-worker errors to the UI on the main thread;
+  prepare, create, and shortcut steps now dismiss their progress page on failure.
+- Preserve an already created vault if a later reopen/registration step fails;
+  direct the user to Sign in for recovery without deleting vault files.
+
 ## 0.3.0
 
 - Repair encrypted backup recovery: version 2 retains the wrapped password
