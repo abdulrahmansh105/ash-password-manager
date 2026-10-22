@@ -19,6 +19,7 @@ from ..config.store import (
     USB_REMOVAL_CHOICES,
     save_settings,
 )
+from ..core.auth.async_login import run_blocking_async
 from ..core.backup.archive import BackupError, backup_filename, create_backup
 from ..core.devices import local_key as local_key_store
 from ..core.devices.registry import list_devices, reset_master_password_with_local_key, revoke_device
@@ -453,9 +454,9 @@ class SettingsDialog(Adw.PreferencesDialog):
         group = Adw.PreferencesGroup(
             title="Create Encrypted Backup",
             description=(
-                "Backs up the vault, key file, and device roster -- never Local Keys, and never the "
-                "master secret in any recoverable form. Restoring always requires the master password "
-                "and registers the restoring device as new."
+                "Encrypts the vault, key file, device roster, and wrapped password slot. "
+                "Local Keys and device slots are excluded. After restoring, use the master password "
+                "that was active when the backup was created, then register this device again."
             ),
         )
         self._backup_passphrase_row = Adw.PasswordEntryRow(title="Backup passphrase")
@@ -471,8 +472,7 @@ class SettingsDialog(Adw.PreferencesDialog):
         return page
 
     def _on_create_backup(self, _btn) -> None:
-        passphrase_text = self._backup_passphrase_row.get_text()
-        if not passphrase_text:
+        if not self._backup_passphrase_row.get_text():
             return
         chooser = Gtk.FileChooserNative(title="Save Backup", action=Gtk.FileChooserAction.SAVE)
         reg = self._app.registration
@@ -482,13 +482,32 @@ class SettingsDialog(Adw.PreferencesDialog):
             if response == Gtk.ResponseType.ACCEPT:
                 path = dialog.get_file().get_path()
                 try:
-                    create_backup(self._layout, Path(path), SecretBytes(passphrase_text))
-                    notify.notify_backup_created(path)
-                    self._backup_result_label.set_label(f"Backup created: {path}")
-                except BackupError as exc:
-                    self._backup_result_label.set_label(f"Backup failed: {exc}")
+                    secret = SecretBytes(self._backup_passphrase_row.get_text())
+                    self._backup_passphrase_row.set_text("")
+
+                    def work() -> str:
+                        try:
+                            create_backup(self._layout, Path(path), secret)
+                            return ""
+                        except BackupError as exc:
+                            return str(exc)
+                        except Exception:
+                            return "The backup could not be completed."
+                        finally:
+                            secret.wipe()
+
+                    def finished(error: str) -> None:
+                        if error:
+                            self._backup_result_label.set_label(f"Backup failed: {error}")
+                        else:
+                            notify.notify_backup_created(path)
+                            self._backup_result_label.set_label(f"Backup created: {path}")
+
+                    self._backup_result_label.set_label("Creating encrypted backup…")
+                    run_blocking_async(work, finished)
+                except (TypeError, AttributeError):
+                    self._backup_result_label.set_label("Select a local backup file.")
                 self._backup_result_label.set_visible(True)
-                self._backup_passphrase_row.set_text("")
             dialog.destroy()
 
         chooser.connect("response", on_response)

@@ -1,24 +1,9 @@
-"""Encrypted vault backup/restore (spec section 15).
+"""Versioned Argon2id/AES-GCM backups with a recoverable password slot.
 
-A backup bundles exactly four files -- the KDBX itself, ``Key.key``,
-``vault.json``, and ``devices.json`` -- into one Argon2id/AES-256-GCM
-encrypted archive. Deliberately excluded:
-
-  * Every key SLOT (``password.slot``, ``device-*.slot``) -- device
-    slots are device-bound and meaningless once restored elsewhere;
-    the password slot is trivially regenerated on restore from the
-    master password supplied at that time, so a backup made before a
-    password change still restores correctly with the *current*
-    password, never a stale one.
-  * The Local Key file itself -- it never leaves the device it was
-    generated on, backup or not (spec section 19).
-  * The Vault Master Secret, in any form.
-
-Restoring always re-derives a fresh VMS and a fresh password slot from
-the master password supplied at restore time, and always registers
-the restoring device as a brand-new device -- a backup is not a way
-to transplant a specific device's identity, and restoring never
-requires (or accepts) a Local Key.
+Version 2 includes the encrypted password slot, never a device slot or
+Local Key. Restoring requires the master password in effect at backup time.
+Version 1 omitted all slots and cannot restore independently; it requires
+an explicitly supplied surviving password slot from the original vault.
 """
 
 from __future__ import annotations
@@ -28,41 +13,42 @@ import io
 import json
 import os
 import secrets
+import shutil
 import tarfile
+import tempfile
 import time
 from pathlib import Path
 
-from ..crypto.aead import AeadError, SealedBox, open_box, seal
+from ..crypto.aead import AeadError, NONCE_LEN, TAG_LEN, SealedBox, open_box, seal
 from ..crypto.kdf import Argon2Params, derive_key_argon2id
+from ..crypto.keyslots import KeySlot, SlotFormatError, SlotKind
 from ..security.memory import SecretBytes
+from ..vaults import health
 from ..vaults.layout import VaultLayout
 
-ARCHIVE_VERSION = 1
+ARCHIVE_VERSION = 2
 ARCHIVE_SUFFIX = ".ashbak"
-_BUNDLED_NAMES = ("Passwords.kdbx", "Key.key", "vault.json", "devices.json")
+_LEGACY_NAMES = ("Passwords.kdbx", "Key.key", "vault.json", "devices.json")
+_BUNDLED_NAMES = (*_LEGACY_NAMES, "keyslots/password.slot")
 _HEADER_LEN_BYTES = 4
+MAX_HEADER_BYTES = 64 * 1024
+MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
 
 
 class BackupError(Exception):
-    pass
+    """A backup operation failed; messages never include secret content."""
 
 
 class BackupCorruptError(BackupError):
-    """Truncated file, bad header JSON, or a tar entry outside the
-    expected bundled-file set. Never a partial write is a backup that
-    was truly created by this module -- always a corrupted/tampered/
-    foreign file."""
+    """Malformed, incomplete, oversized, or foreign backup."""
 
 
 class BackupWrongPassphraseError(BackupError):
-    """Indistinguishable, deliberately, from "the file is corrupted"
-    at the AEAD layer (spec section 21) -- this subclass exists only
-    for a slightly more helpful UI message, not because the two cases
-    are cryptographically distinguishable."""
+    """Wrong passphrase and authenticated corruption are indistinguishable."""
 
 
-def _aad() -> bytes:
-    return f"ash-pm/backup/v{ARCHIVE_VERSION}".encode()
+def _aad(version: int = ARCHIVE_VERSION) -> bytes:
+    return f"ash-pm/backup/v{version}".encode()
 
 
 def _b64(data: bytes) -> str:
@@ -70,7 +56,7 @@ def _b64(data: bytes) -> str:
 
 
 def _unb64(text: str) -> bytes:
-    return base64.urlsafe_b64decode(text.encode("ascii"))
+    return base64.b64decode(text.encode("ascii"), altchars=b"-_", validate=True)
 
 
 def _zero(buf: bytearray) -> None:
@@ -79,9 +65,85 @@ def _zero(buf: bytearray) -> None:
 
 
 def backup_filename(vault_name: str) -> str:
-    safe_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in vault_name) or "vault"
+    safe_name = (
+        "".join(c if c.isalnum() or c in "-_" else "-" for c in vault_name) or "vault"
+    )
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    return f"ash-backup-{safe_name}-{stamp}{ARCHIVE_SUFFIX}"
+    return f"ash-backup-{safe_name[:80]}-{stamp}{ARCHIVE_SUFFIX}"
+
+
+def _validate_slot(raw: bytes, vault_raw: bytes) -> None:
+    try:
+        slot = KeySlot.from_dict(json.loads(raw))
+        vault = json.loads(vault_raw)
+        if (
+            slot.kind is not SlotKind.PASSWORD
+            or slot.slot_id != "password"
+            or slot.vault_id != vault["vault_id"]
+        ):
+            raise ValueError("Slot identity mismatch")
+    except (
+        SlotFormatError,
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        UnicodeError,
+    ) as exc:
+        raise BackupCorruptError(
+            "Backup password slot or vault metadata is invalid."
+        ) from exc
+
+
+def _validate_payload(data: bytes, version: int) -> dict[str, bytes]:
+    """Use the same complete validation for verify and restore, before writes."""
+    expected = set(_BUNDLED_NAMES if version == 2 else _LEGACY_NAMES)
+    try:
+        files = {}
+        # Only our uncompressed tar format is accepted (no decompression bombs).
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:") as tar:
+            for member in tar:
+                if (
+                    member.name not in expected
+                    or member.name in files
+                    or not member.isfile()
+                    or member.issparse()
+                ):
+                    raise BackupCorruptError(
+                        "Backup contains unexpected, duplicate, or non-regular entries."
+                    )
+                if (
+                    not 0 < member.size <= MAX_ARCHIVE_BYTES
+                    or sum(map(len, files.values())) + member.size > MAX_ARCHIVE_BYTES
+                ):
+                    raise BackupCorruptError("Backup member size is invalid.")
+                stream = tar.extractfile(member)
+                if stream is None:
+                    raise BackupCorruptError("Backup member is unreadable.")
+                files[member.name] = stream.read()
+                if len(files[member.name]) != member.size:
+                    raise BackupCorruptError("Backup member is truncated.")
+        if set(files) != expected:
+            raise BackupCorruptError("Backup is missing required files.")
+        vault = json.loads(files["vault.json"])
+        devices = json.loads(files["devices.json"])
+        if (
+            not isinstance(vault, dict)
+            or not isinstance(vault.get("vault_id"), str)
+            or not vault["vault_id"]
+        ):
+            raise BackupCorruptError("Backup vault metadata is invalid.")
+        if not isinstance(devices, list) or any(
+            not isinstance(item, dict) for item in devices
+        ):
+            raise BackupCorruptError("Backup device roster is invalid.")
+        if version == 2:
+            _validate_slot(files["keyslots/password.slot"], files["vault.json"])
+        return files
+    except BackupError:
+        raise
+    except (tarfile.TarError, OSError, ValueError, UnicodeError) as exc:
+        raise BackupCorruptError("Backup payload is malformed.") from exc
 
 
 def _pack(layout: VaultLayout) -> bytes:
@@ -91,29 +153,25 @@ def _pack(layout: VaultLayout) -> bytes:
         "Key.key": layout.keyfile_path,
         "vault.json": layout.vault_json,
         "devices.json": layout.devices_json,
+        "keyslots/password.slot": layout.keyslot_path("password"),
     }
-    with tarfile.open(fileobj=buf, mode="w") as tar:
-        for arcname, path in paths.items():
-            if not path.exists():
-                raise BackupError(f"Cannot back up -- missing required file: {path.name}")
-            tar.add(path, arcname=arcname)
-    return buf.getvalue()
-
-
-def _unpack(data: bytes, destination: VaultLayout) -> None:
-    destination.ensure_dirs()
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r") as tar:
-        names = set(tar.getnames())
-        if not names.issubset(set(_BUNDLED_NAMES)):
-            raise BackupCorruptError("Backup archive contains unexpected entries.")
-        for member in tar.getmembers():
-            if not member.isfile():
-                raise BackupCorruptError("Backup archive contains a non-regular-file entry.")
-        # filter="data" additionally rejects path traversal / absolute
-        # paths / device files at the extraction layer itself -- the
-        # explicit name check above is defense in depth, not a
-        # substitute for it.
-        tar.extractall(path=destination.container_dir, filter="data")
+    try:
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            for arcname, path in paths.items():
+                if not path.is_file() or path.is_symlink():
+                    raise BackupError(
+                        f"Cannot back up: missing or unsafe file {path.name}."
+                    )
+                if path.stat().st_size > MAX_ARCHIVE_BYTES:
+                    raise BackupError("Vault exceeds the supported backup size.")
+                tar.add(path, arcname=arcname, recursive=False)
+        payload = buf.getvalue()
+        if len(payload) > MAX_ARCHIVE_BYTES:
+            raise BackupError("Vault exceeds the supported backup size.")
+        _validate_payload(payload, ARCHIVE_VERSION)
+        return payload
+    except OSError as exc:
+        raise BackupError(f"Could not read vault files: {type(exc).__name__}.") from exc
 
 
 def create_backup(
@@ -125,6 +183,8 @@ def create_backup(
 ) -> Path:
     if output_path.exists():
         raise BackupError(f"Refusing to overwrite an existing file: {output_path}")
+    if not passphrase:
+        raise BackupError("A non-empty backup passphrase is required.")
     params = params or Argon2Params()
     payload = _pack(layout)
     salt = secrets.token_bytes(16)
@@ -133,7 +193,6 @@ def create_backup(
         box = seal(bytes(kek), payload, aad=_aad())
     finally:
         _zero(kek)
-
     header = json.dumps(
         {
             "version": ARCHIVE_VERSION,
@@ -144,70 +203,138 @@ def create_backup(
             "tag": _b64(box.tag),
         }
     ).encode("utf-8")
-
+    created = False
     try:
         fd = os.open(output_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError as exc:
-        raise BackupError(f"Refusing to overwrite an existing file: {output_path}") from exc
-    with os.fdopen(fd, "wb") as fh:
-        fh.write(len(header).to_bytes(_HEADER_LEN_BYTES, "big"))
-        fh.write(header)
-        fh.write(box.ciphertext)
+        created = True
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(len(header).to_bytes(_HEADER_LEN_BYTES, "big"))
+            fh.write(header)
+            fh.write(box.ciphertext)
+            fh.flush()
+            os.fsync(fh.fileno())
+    except OSError as exc:
+        if created:
+            output_path.unlink(missing_ok=True)
+        raise BackupError(f"Could not write backup: {type(exc).__name__}.") from exc
     return output_path
 
 
-def _decrypt_archive(archive_path: Path, passphrase: SecretBytes) -> bytes:
+def _decrypt_archive(archive_path: Path, passphrase: SecretBytes) -> tuple[bytes, int]:
     try:
-        raw = archive_path.read_bytes()
+        with archive_path.open("rb") as fh:
+            prefix = fh.read(_HEADER_LEN_BYTES)
+            if len(prefix) != _HEADER_LEN_BYTES:
+                raise BackupCorruptError("Backup file is too short.")
+            header_len = int.from_bytes(prefix, "big")
+            if not 0 < header_len <= MAX_HEADER_BYTES:
+                raise BackupCorruptError("Backup header size is invalid.")
+            header = fh.read(header_len)
+            if len(header) != header_len:
+                raise BackupCorruptError("Backup file is truncated.")
+            ciphertext = fh.read(MAX_ARCHIVE_BYTES + 1)
+            if not ciphertext or len(ciphertext) > MAX_ARCHIVE_BYTES:
+                raise BackupCorruptError("Backup payload size is invalid.")
     except OSError as exc:
-        raise BackupError(f"Could not read backup file: {type(exc).__name__}") from exc
-
-    if len(raw) < _HEADER_LEN_BYTES:
-        raise BackupCorruptError("Backup file is too short to be valid.")
-    header_len = int.from_bytes(raw[:_HEADER_LEN_BYTES], "big")
-    if len(raw) < _HEADER_LEN_BYTES + header_len:
-        raise BackupCorruptError("Backup file is truncated.")
-
+        raise BackupError(f"Could not read backup file: {type(exc).__name__}.") from exc
     try:
-        manifest = json.loads(raw[_HEADER_LEN_BYTES : _HEADER_LEN_BYTES + header_len].decode("utf-8"))
-        if manifest.get("version") != ARCHIVE_VERSION:
-            raise BackupCorruptError(f"Unsupported backup version: {manifest.get('version')!r}")
+        manifest = json.loads(header)
+        version = manifest["version"]
+        if type(version) is not int or version not in (1, 2):
+            raise ValueError("Unsupported version")
         params = Argon2Params.from_dict(manifest["argon2"])
         salt = _unb64(manifest["salt"])
         box = SealedBox(
             nonce=_unb64(manifest["nonce"]),
-            ciphertext=raw[_HEADER_LEN_BYTES + header_len :],
+            ciphertext=ciphertext,
             tag=_unb64(manifest["tag"]),
         )
-    except BackupCorruptError:
-        raise
-    except (KeyError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise BackupCorruptError(f"Malformed backup header: {type(exc).__name__}") from exc
-
+        if (
+            not 16 <= len(salt) <= 64
+            or len(box.nonce) != NONCE_LEN
+            or len(box.tag) != TAG_LEN
+        ):
+            raise ValueError("Invalid encryption metadata")
+    except (KeyError, ValueError, TypeError, AttributeError, UnicodeError) as exc:
+        raise BackupCorruptError("Backup header is malformed or unsupported.") from exc
     kek = bytearray(derive_key_argon2id(passphrase, salt, params))
     try:
-        return open_box(bytes(kek), box, aad=_aad())
+        return open_box(bytes(kek), box, aad=_aad(version)), version
     except AeadError as exc:
-        raise BackupWrongPassphraseError("Incorrect backup passphrase, or the backup file is corrupted.") from exc
+        raise BackupWrongPassphraseError(
+            "Incorrect backup passphrase, or the backup file is corrupted."
+        ) from exc
     finally:
         _zero(kek)
 
 
 def verify_backup(archive_path: Path, passphrase: SecretBytes) -> bool:
-    """Decrypts and validates the archive without writing anything to
-    disk -- confirms the passphrase is correct and the bundle is
-    well-formed. Raises on any problem; returns True only on a fully
-    valid backup."""
-    payload = _decrypt_archive(archive_path, passphrase)
-    with tarfile.open(fileobj=io.BytesIO(payload), mode="r") as tar:
-        names = set(tar.getnames())
-        if not names.issubset(set(_BUNDLED_NAMES)):
-            raise BackupCorruptError("Backup archive contains unexpected entries.")
+    """Validate a complete, independently recoverable backup without writes.
+
+    Version 1 is deliberately not reported as recoverable: it needs a
+    surviving original password slot and must be restored explicitly.
+    """
+    payload, version = _decrypt_archive(archive_path, passphrase)
+    _validate_payload(payload, version)
+    if version == 1:
+        raise BackupError(
+            "Legacy version-1 backup omits the password slot and is not independently recoverable. "
+            "Restore requires --legacy-password-slot from the original vault; create a new backup if possible."
+        )
     return True
 
 
-def restore_backup(archive_path: Path, destination: VaultLayout, passphrase: SecretBytes) -> None:
+def restore_backup(
+    archive_path: Path,
+    destination: VaultLayout,
+    passphrase: SecretBytes,
+    *,
+    legacy_password_slot: Path | None = None,
+) -> None:
     if destination.container_dir.exists() and any(destination.container_dir.iterdir()):
-        raise BackupError(f"Refusing to restore into a non-empty directory: {destination.container_dir}")
-    payload = _decrypt_archive(archive_path, passphrase)
-    _unpack(payload, destination)
+        raise BackupError(
+            f"Refusing to restore into a non-empty directory: {destination.container_dir}"
+        )
+    payload, version = _decrypt_archive(archive_path, passphrase)
+    files = _validate_payload(payload, version)
+    if version == 1:
+        if legacy_password_slot is None:
+            raise BackupError(
+                "Legacy version-1 backup has no password slot. Supply --legacy-password-slot "
+                "from the original vault; the backup alone cannot recover its encryption key."
+            )
+        try:
+            raw = legacy_password_slot.read_bytes()
+        except OSError as exc:
+            raise BackupError("Could not read the original password slot.") from exc
+        _validate_slot(raw, files["vault.json"])
+        files["keyslots/password.slot"] = raw
+    elif legacy_password_slot is not None:
+        raise BackupError(
+            "An external password slot is only accepted for version-1 backups."
+        )
+
+    # No tar extraction: validated bytes are written under fixed names in a
+    # private sibling directory, then published in one rename on success.
+    destination.container_dir.parent.mkdir(parents=True, exist_ok=True)
+    work = Path(
+        tempfile.mkdtemp(
+            prefix=f".{destination.container_dir.name}.restore-",
+            dir=destination.container_dir.parent,
+        )
+    )
+    try:
+        for name, contents in files.items():
+            path = work / name
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(contents)
+                fh.flush()
+                os.fsync(fh.fileno())
+        health.update_integrity_manifest(VaultLayout(work))
+        os.replace(work, destination.container_dir)
+    except OSError as exc:
+        raise BackupError(f"Could not restore backup: {type(exc).__name__}.") from exc
+    finally:
+        shutil.rmtree(work, ignore_errors=True)

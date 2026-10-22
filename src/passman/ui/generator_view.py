@@ -29,14 +29,13 @@ from ..core.generator import (
     generate,
     generate_random_password,
 )
-from ..core.security.clipboard import ClipboardManager
 
 
 class GeneratorDialog(Adw.Dialog):
     def __init__(self, parent_window) -> None:
         super().__init__(title="Password Generator", content_width=420, content_height=420)
         self._parent_window = parent_window
-        self._clipboard = ClipboardManager()
+        self._clipboard = parent_window.app.session.clipboard
 
         toolbar_view = Adw.ToolbarView()
         toolbar_view.add_top_bar(Adw.HeaderBar())
@@ -63,7 +62,7 @@ class GeneratorDialog(Adw.Dialog):
             text = entry.get_text()
             if not text:
                 return
-            status = self._clipboard.copy(text, 30)
+            status = self._clipboard.copy(text, self._parent_window.app.settings.clipboard_timeout_seconds())
             error_label.set_visible(not status.copied)
             if not status.copied:
                 error_label.set_text(status.error or "Copy failed.")

@@ -363,7 +363,11 @@ class StrategyEditorDialog(Adw.Dialog):
 
         def work():
             context = get_active_window_context()
-            backend = select_backend(allow_clipboard_fallback=clipboard_fallback)
+            backend = select_backend(
+                allow_clipboard_fallback=clipboard_fallback,
+                clipboard=self._app.session.clipboard,
+                clear_after_seconds=self._app.settings.clipboard_timeout_seconds(),
+            )
             result = run_test(
                 backend,
                 strategy,
@@ -409,7 +413,11 @@ class StrategyEditorDialog(Adw.Dialog):
             self._test_result_label.set_text("Testing strategy…")
 
             def work():
-                backend = select_backend(allow_clipboard_fallback=clipboard_fallback)
+                backend = select_backend(
+                    allow_clipboard_fallback=clipboard_fallback,
+                    clipboard=self._app.session.clipboard,
+                    clear_after_seconds=self._app.settings.clipboard_timeout_seconds(),
+                )
                 return run_test(
                     backend,
                     strategy,

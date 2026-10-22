@@ -53,6 +53,21 @@ class Argon2Params:
     memory_cost_kib: int = ARGON2ID_MEMORY_COST_KIB
     parallelism: int = ARGON2ID_PARALLELISM
 
+    def __post_init__(self) -> None:
+        # These values are read from unauthenticated USB/backup headers.
+        # Reject pathological work factors before calling native Argon2.
+        values = (self.time_cost, self.memory_cost_kib, self.parallelism)
+        if any(type(value) is not int for value in values):
+            raise ValueError("Argon2 parameters must be integers.")
+        if not 1 <= self.time_cost <= 16:
+            raise ValueError("Argon2 time cost must be between 1 and 16.")
+        if not 1 <= self.parallelism <= 16:
+            raise ValueError("Argon2 parallelism must be between 1 and 16.")
+        if not 8 * self.parallelism <= self.memory_cost_kib <= 512 * 1024:
+            raise ValueError("Argon2 memory cost is outside the supported range.")
+        if self.time_cost * self.memory_cost_kib > 4 * 1024 * 1024:
+            raise ValueError("Argon2 total work exceeds the supported limit.")
+
     def to_dict(self) -> dict[str, int]:
         return {
             "time_cost": self.time_cost,
@@ -62,10 +77,12 @@ class Argon2Params:
 
     @staticmethod
     def from_dict(d: dict) -> Argon2Params:
+        if not isinstance(d, dict):
+            raise ValueError("Argon2 parameters must be an object.")
         return Argon2Params(
-            time_cost=int(d["time_cost"]),
-            memory_cost_kib=int(d["memory_cost_kib"]),
-            parallelism=int(d["parallelism"]),
+            time_cost=d["time_cost"],
+            memory_cost_kib=d["memory_cost_kib"],
+            parallelism=d["parallelism"],
         )
 
 
@@ -99,7 +116,7 @@ def derive_key_argon2id(password: SecretBytes, salt: bytes, params: Argon2Params
 
 def hkdf_sha256(ikm: bytes, salt: bytes, info: bytes, length: int = KEY_LEN) -> bytes:
     """RFC 5869 HKDF-SHA256 (extract-then-expand)."""
-    if length > 255 * hashlib.sha256().digest_size:
+    if not 1 <= length <= 255 * hashlib.sha256().digest_size:
         raise ValueError("Requested HKDF output length is too large.")
     prk = hmac.new(salt, ikm, hashlib.sha256).digest()
     t = b""

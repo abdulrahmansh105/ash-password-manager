@@ -1,19 +1,14 @@
-"""Tiny atomic JSON read/write helper.
-
-The project already had this "0700 dir / 0600 file / write-temp-then-
-``os.replace``" pattern hand-rolled in ``config/store.py``. Every new
-module under ``core/`` that persists a small local or on-USB record
-(device identity, key slots, the vault registry, the devices list)
-needs the exact same pattern, so it lives here once instead of being
-copy-pasted five times.
-"""
+"""Private, durable atomic writes for local and on-USB records."""
 
 from __future__ import annotations
 
 import json
 import os
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 FILE_MODE = 0o600
 DIR_MODE = 0o700
@@ -27,34 +22,45 @@ def ensure_dir(path: Path) -> None:
         pass
 
 
-def write_json_atomic(path: Path, data: Any, *, mode: int = FILE_MODE) -> None:
-    """Write ``data`` as JSON to ``path``, atomically. The directory is
-    created (0700) if missing. A crash mid-write leaves either the old
-    file or nothing -- never a truncated/corrupt one -- because the
-    temp file is only ``os.replace``d into place after a full,
-    successful write."""
+@contextmanager
+def atomic_writer(path: Path, *, mode: int = FILE_MODE) -> Iterator[BinaryIO]:
+    """Publish only a fully written, fsynced file; never follow a temp symlink.
+
+    A unique exclusive temporary file also keeps simultaneous writers from
+    sharing a buffer. This does not provide application-level conflict merging.
+    """
     ensure_dir(path.parent)
-    tmp = path.with_suffix(path.suffix + f".tmp-{os.getpid()}")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    fd, name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    tmp = Path(name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2, ensure_ascii=False)
-            fh.write("\n")
-        os.chmod(tmp, mode)
+        with os.fdopen(fd, "wb") as fh:
+            os.fchmod(fh.fileno(), mode)
+            yield fh
+            fh.flush()
+            os.fsync(fh.fileno())
         os.replace(tmp, path)
-    finally:
-        if tmp.exists():
+        # Directory fsync is not available on every removable filesystem.
+        try:
+            directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
             try:
-                tmp.unlink()
-            except OSError:
-                pass
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except OSError:
+            pass
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def write_json_atomic(path: Path, data: Any, *, mode: int = FILE_MODE) -> None:
+    payload = (json.dumps(data, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    with atomic_writer(path, mode=mode) as fh:
+        fh.write(payload)
 
 
 def read_json(path: Path, default: Any) -> Any:
-    """Tolerant read: a missing, corrupt, or unreadable file quietly
-    reverts to ``default`` rather than raising -- callers decide what
-    "no valid record yet" means for their own schema."""
+    """Tolerant configuration read; credential callers validate separately."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return default

@@ -17,11 +17,17 @@ drives) and never visibly flash the actual wizard on screen.
 
 from __future__ import annotations
 
-import gi
+import pytest
+
+gi = pytest.importorskip("gi")
 
 gi.require_version("Gtk", "4.0")
+gi.require_version("Gdk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk
+from gi.repository import Gdk, Gtk
+
+Gtk.init_check()
+pytestmark = pytest.mark.skipif(Gdk.Display.get_default() is None, reason="GTK display is unavailable")
 
 
 class _FakeSetupWindow(Gtk.Window):

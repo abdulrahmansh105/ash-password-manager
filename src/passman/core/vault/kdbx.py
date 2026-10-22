@@ -36,7 +36,9 @@ Mapping of spec-required fields to KDBX fields:
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
+import io
 import json
 import os
 import secrets
@@ -48,7 +50,8 @@ from urllib.parse import parse_qs, quote, urlparse
 from ..recovery.codes import deserialize as deserialize_recovery_codes
 from ..recovery.codes import serialize as serialize_recovery_codes
 from ..security.memory import SecretBytes
-from ..totp.totp import TotpConfig
+from ..totp.totp import InvalidTotpSecretError, TotpConfig
+from ..util.atomic_json import atomic_writer
 from .models import AccountSecrets, AccountSummary, RecoveryCode, normalize_category
 
 PM_SERVICE_NAME = "PM_ServiceName"
@@ -72,6 +75,28 @@ class VaultOpenError(VaultError):
 
 class EntryNotFoundError(VaultError):
     pass
+
+
+class VaultConflictError(VaultError):
+    """Another writer changed or removed the vault; preserve both versions."""
+
+
+def _file_digest(path: Path) -> bytes:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for block in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.digest()
+
+
+def _app_identifiers(raw: str) -> tuple[str, ...]:
+    try:
+        values = json.loads(raw)
+        if isinstance(values, list):
+            return tuple(value for value in values if isinstance(value, str) and value.strip())
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return ()
 
 
 def _require_pykeepass():
@@ -122,7 +147,7 @@ def _totp_from_uri(uri: str) -> TotpConfig | None:
         period = int(qs.get("period", ["30"])[0])
         algorithm = qs.get("algorithm", ["SHA1"])[0].upper()
         return TotpConfig(secret_base32=secret, digits=digits, period=period, algorithm=algorithm)
-    except (ValueError, IndexError, KeyError):
+    except (ValueError, IndexError, KeyError, InvalidTotpSecretError):
         return None
 
 
@@ -134,6 +159,11 @@ class VaultHandle:
     _kp: object  # pykeepass.PyKeePass, kept untyped to avoid importing
     # pykeepass at module import time for callers that only need the
     # dataclass/type surface (e.g. tests that mock this out).
+
+    _fingerprint: bytes | None = None
+
+    def __post_init__(self) -> None:
+        self._fingerprint = _file_digest(Path(self._kp.filename))
 
     # -- reading -----------------------------------------------------
 
@@ -151,10 +181,7 @@ class VaultHandle:
         password/TOTP at all, even transiently)."""
         entry = self._find(entry_uuid)
         raw = entry.get_custom_property(PM_APP_IDENTIFIERS) or "[]"
-        try:
-            return tuple(json.loads(raw))
-        except (json.JSONDecodeError, TypeError):
-            return ()
+        return _app_identifiers(raw)
 
     def get_auth_strategy_json(self, entry_uuid: str) -> str | None:
         """The stored strategy JSON only -- same non-secret rationale as
@@ -165,10 +192,7 @@ class VaultHandle:
     def get_account_secrets(self, entry_uuid: str) -> AccountSecrets:
         entry = self._find(entry_uuid)
         app_ids_raw = entry.get_custom_property(PM_APP_IDENTIFIERS) or "[]"
-        try:
-            app_ids = tuple(json.loads(app_ids_raw))
-        except (json.JSONDecodeError, TypeError):
-            app_ids = ()
+        app_ids = _app_identifiers(app_ids_raw)
 
         otp_uri = entry.otp
         totp = _totp_from_uri(otp_uri) if otp_uri else None
@@ -315,7 +339,32 @@ class VaultHandle:
             self._kp.keyfile = keyfile
 
     def save(self) -> None:
-        self._kp.save()
+        if self._kp is None:
+            raise VaultError("The vault is closed.")
+        path = Path(self._kp.filename)
+        # Serialize ASH writers using a stable sidecar inode. Never unlink the
+        # lock file: doing so would let another writer lock a different inode.
+        lock_path = path.with_name(f".{path.name}.lock")
+        try:
+            fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, "rb") as lock:
+                try:
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as exc:
+                    raise VaultConflictError("Another process is saving this vault. Try again after it finishes.") from exc
+                try:
+                    current = _file_digest(path)
+                except FileNotFoundError as exc:
+                    raise VaultConflictError("The vault was removed; reconnect it and reopen before saving.") from exc
+                if current != self._fingerprint:
+                    raise VaultConflictError("The vault changed on disk. Reopen it before saving; your disk copy was preserved.")
+                with atomic_writer(path) as fh:
+                    self._kp.save(fh)
+                self._fingerprint = _file_digest(path)
+        except VaultError:
+            raise
+        except Exception as exc:
+            raise VaultError(f"Could not save vault: {type(exc).__name__}.") from exc
 
     def close(self) -> None:
         """Drop the reference to the underlying database. CPython/
@@ -335,27 +384,32 @@ def open_vault(vault_path: Path, key_file_path: Path | None, password: SecretByt
     Raises ``VaultOpenError`` on any failure (missing file, wrong
     key/password, corrupt database) -- never partially returns a handle.
     """
-    pykeepass = _require_pykeepass()
-    if not vault_path.exists():
-        raise VaultOpenError(f"Vault file not found: {vault_path}")
-    if key_file_path is not None and not key_file_path.exists():
-        raise VaultOpenError(f"Key file not found: {key_file_path}")
-
-    kwargs: dict = {}
-    if key_file_path is not None:
-        kwargs["keyfile"] = str(key_file_path)
-    if password is not None:
-        kwargs["password"] = password.to_str()
-
     try:
-        kp = pykeepass.PyKeePass(str(vault_path), **kwargs)
-    except Exception as exc:
-        raise VaultOpenError(f"Failed to open vault: {type(exc).__name__}") from exc
+        pykeepass = _require_pykeepass()
+        if not vault_path.is_file():
+            raise VaultOpenError(f"Vault file not found: {vault_path}")
+        if key_file_path is not None and not key_file_path.is_file():
+            raise VaultOpenError(f"Key file not found: {key_file_path}")
+        kwargs: dict = {}
+        if key_file_path is not None:
+            kwargs["keyfile"] = str(key_file_path)
+        if password is not None:
+            kwargs["password"] = password.to_str()
+        try:
+            before = _file_digest(vault_path)
+            kp = pykeepass.PyKeePass(str(vault_path), **kwargs)
+            handle = VaultHandle(_kp=kp)
+            if before != handle._fingerprint:
+                handle.close()
+                raise VaultOpenError("The vault changed while it was opening. Try again.")
+            return handle
+        except VaultOpenError:
+            raise
+        except Exception as exc:
+            raise VaultOpenError(f"Failed to open vault: {type(exc).__name__}") from exc
     finally:
         if password is not None:
             password.wipe()
-
-    return VaultHandle(_kp=kp)
 
 
 def generate_keyfile(path: Path) -> None:
@@ -454,17 +508,35 @@ def create_vault(vault_path: Path, key_file_path: Path, password: SecretBytes | 
     ``_upgrade_kdf_to_argon2id`` above for exactly how and why this is
     safe, and why a structural mismatch raises loudly instead of
     silently keeping Argon2d."""
-    pykeepass = _require_pykeepass()
-    if not key_file_path.exists():
-        generate_keyfile(key_file_path)
-    kwargs: dict = {"keyfile": str(key_file_path)}
-    if password is not None:
-        kwargs["password"] = password.to_str()
+    created = False
     try:
-        kp = pykeepass.create_database(str(vault_path), **kwargs)
+        pykeepass = _require_pykeepass()
+        if vault_path.exists() or vault_path.is_symlink():
+            raise VaultError("Refusing to overwrite an existing vault.")
+        if not key_file_path.exists():
+            generate_keyfile(key_file_path)
+        kwargs: dict = {"keyfile": str(key_file_path)}
+        if password is not None:
+            kwargs["password"] = password.to_str()
+        # Build and validate the encrypted database before creating its final
+        # path. O_EXCL also closes the check/create race with another process.
+        buffer = io.BytesIO()
+        kp = pykeepass.create_database(buffer, **kwargs)
         _upgrade_kdf_to_argon2id(kp)
-        kp.save()
+        buffer = io.BytesIO()
+        kp.save(buffer)
+        fd = os.open(vault_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        created = True
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(buffer.getvalue())
+            fh.flush()
+            os.fsync(fh.fileno())
+        kp.filename = str(vault_path)
+        return VaultHandle(_kp=kp)
+    except Exception:
+        if created:
+            vault_path.unlink(missing_ok=True)
+        raise
     finally:
         if password is not None:
             password.wipe()
-    return VaultHandle(_kp=kp)

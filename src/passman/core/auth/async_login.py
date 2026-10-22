@@ -91,6 +91,8 @@ def run_login_async(
     on_done: Callable[[LoginResult], None],
     sleep_fn: Callable[[float], None] | None = None,
     idle_scheduler: IdleScheduler = glib_idle_scheduler,
+    is_cancelled: Callable[[], bool] | None = None,
+    context_provider: Callable[[], DetectedContext] | None = None,
 ) -> threading.Thread:
     """Runs one full sign-in -- backend selection (AT-SPI probe / ydotool
     ``pgrep``), then ``LoginEngine.run()`` (subprocess calls and WAIT-step
@@ -105,11 +107,19 @@ def run_login_async(
     sign-in sequence."""
 
     def work() -> LoginResult:
-        backend = backend_factory()
-        if backend is None:
-            return LoginResult(LoginOutcome.NO_BACKEND, "no input backend available")
-        engine = LoginEngine(backend, sleep_fn=sleep_fn or time.sleep)
-        return engine.run(secrets, strategy, context, guard_mode, confirmed=confirmed)
+        try:
+            if is_cancelled is not None and is_cancelled():
+                return LoginResult(LoginOutcome.FAILED, "login cancelled because the session locked")
+            backend = backend_factory()
+            engine = LoginEngine(backend, sleep_fn=sleep_fn or time.sleep)
+            return engine.run(
+                secrets, strategy, context, guard_mode, confirmed=confirmed,
+                is_cancelled=is_cancelled, context_provider=context_provider,
+            )
+        except Exception:
+            return LoginResult(LoginOutcome.FAILED, "login failed; no further input was sent")
+        finally:
+            secrets.wipe()
 
     return run_blocking_async(work, on_done, idle_scheduler)
 

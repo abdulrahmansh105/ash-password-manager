@@ -130,7 +130,7 @@ def read_slot(layout: VaultLayout, slot_id: str) -> KeySlot:
         raise DeviceRegistryError(f"Key slot not found: {slot_id}") from None
     except OSError as exc:
         raise VaultUnreadableError(f"Key slot {slot_id!r} exists but could not be read: {exc}") from exc
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, UnicodeError) as exc:
         raise DeviceRegistryError(f"Key slot {slot_id!r} is corrupt: {exc}") from exc
     return KeySlot.from_dict(raw)
 

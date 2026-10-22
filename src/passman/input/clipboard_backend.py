@@ -22,7 +22,7 @@ from .ydotool_backend import YdotoolBackend
 class ClipboardPasteBackend(AuthInputBackend):
     name = "clipboard_paste"
 
-    def __init__(self, clipboard: ClipboardManager | None = None, clear_after_seconds: int = 20) -> None:
+    def __init__(self, clipboard: ClipboardManager | None = None, clear_after_seconds: int | None = 20) -> None:
         self._clipboard = clipboard or ClipboardManager()
         self._clear_after_seconds = clear_after_seconds
         self._paste_key_backend = YdotoolBackend()

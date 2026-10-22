@@ -49,10 +49,11 @@ prompt directly (terminal getpass or the desktop's polkit agent), via
 | Process memory, only while a setup/login/manager window is running | The decrypted vault handle, `SecretBytes`-wrapped password/VMS during derivation, TOTP codes for their ~30s validity |
 | The optional background agent's memory | Nothing secret at all, ever -- see the agent section below |
 
-Nothing in that table, including the log file, survives past a
-`lock()` call with the actual secret intact. See
-`core/security/memory.py` for the honest limits of what CPython can
-guarantee here.
+Locking closes the active vault, clears clipboard content owned by the
+session, and drops references to decrypted state. Device Local Key files,
+configuration, and logs remain on disk by design; locking does not delete
+them. See `core/security/memory.py` for the limits of best-effort memory
+cleanup in CPython.
 
 ## Threats considered
 
@@ -69,7 +70,7 @@ guarantee here.
 | Password/TOTP appearing in `ps`/`/proc/<pid>/cmdline` | Every synthetic-input backend passes secrets via stdin or in-process API, never argv (tested) |
 | A malicious or buggy vault entry field | Custom-property values are only ever literal text or strictly-parsed structured data -- never `eval`'d, never used to build a shell command |
 | A malformed/truncated/tampered key slot or backup file | AES-GCM authentication fails closed; `SlotFormatError`/`BackupCorruptError` are distinct from a wrong credential only in message text, never in behavior -- both refuse, neither partially succeeds |
-| Path traversal via a vault-relative path or a backup archive entry | `core/vaults/layout.py` resolves every path and rejects escapes; backup restoration validates archive member names before ever extracting (`core/backup/archive.py`, plus `tarfile`'s own `filter="data"`) |
+| Path traversal via a vault-relative path or a backup archive entry | `core/vaults/layout.py` resolves every path and rejects escapes; backup restoration validates the exact allowed names and regular-file members, then writes fixed paths into a private staging directory without tar extraction |
 
 ## Honest limitations (documented, not hidden)
 
@@ -82,7 +83,7 @@ guarantee here.
   operating inside the same logged-in user session.** No local
   "unlock without a password" mechanism on any platform can promise
   otherwise.
-- **Losing the master password loses the vault.** No recovery slot, no
+- **Losing the master password without a working enrolled Local Key loses access.** No recovery slot, no
   emergency kit, no code-based bypass, by explicit decision. See
   `docs/BACKUP_RECOVERY.md`.
 - **AT-SPI autotype, the GNOME shortcut backend, and the XDG

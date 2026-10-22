@@ -12,21 +12,19 @@ This is the module the setup wizard actually calls. It composes:
   core.vaults.layout     -- traversal-safe on-USB paths
   core.vaults.health     -- integrity manifest
 
-``create_new_vault`` refuses outright to touch a non-empty container
-directory (fixing the underlying ``core.vault.kdbx.create_vault``
-overwrite hazard -- that function itself will happily clobber an
-existing ``Passwords.kdbx``; every caller must guard it, and this is
-the one guarded entry point the rest of the application uses). Both
-operations are transactional: work happens in a sibling ``*.tmp-<pid>``
-directory and is only moved into place on full success (spec section
-26: "do not create a partially initialized account silently -- if
-setup fails, clean up safely").
+``create_new_vault`` refuses a non-empty destination and publishes a fully
+initialized vault from a private sibling directory. Adoption keeps a
+``.pre-ash-backup`` of the original encrypted database and rolls back on
+caught errors. If the process is interrupted during adoption, that backup
+and the original credentials remain available for manual recovery.
+
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import tempfile
 import time
 import uuid as uuid_mod
 from dataclasses import dataclass
@@ -39,7 +37,7 @@ from ..devices import registry as device_registry
 from ..devices.local_key import DeviceIdentity
 from ..platforminfo import default_device_label, read_os_pretty_name
 from ..security.memory import SecretBytes
-from ..util.atomic_json import read_json, write_json_atomic
+from ..util.atomic_json import atomic_writer, read_json, write_json_atomic
 from ..vaults import health
 from ..vaults.layout import VaultLayout
 from .kdbx import VaultOpenError, generate_keyfile, open_vault
@@ -163,8 +161,8 @@ def create_new_vault(
         raise VaultAlreadyExistsError(f"A vault or file already exists at {layout.container_dir}")
 
     vault_id = _new_vault_id()
-    work_dir = layout.container_dir.parent / f"{layout.container_dir.name}.tmp-{os.getpid()}"
-    shutil.rmtree(work_dir, ignore_errors=True)
+    layout.container_dir.parent.mkdir(parents=True, exist_ok=True)
+    work_dir = Path(tempfile.mkdtemp(prefix=f".{layout.container_dir.name}.setup-", dir=layout.container_dir.parent))
     work_layout = VaultLayout(container_dir=work_dir)
 
     identity: DeviceIdentity | None = None
@@ -237,8 +235,20 @@ def adopt_existing_vault(
         raise ProvisioningError(f"No KDBX file found at {layout.kdbx_path}")
     if layout.vault_json.exists():
         raise ProvisioningError("This container is already an ASH vault; use create_new_vault for a new one.")
+    if any(layout.keyslots_dir.glob("*.slot")):
+        raise ProvisioningError("Existing key slots were found. Preserve them and recover the original ASH vault before adoption.")
 
-    existing_keyfile_path = Path(mountpoint) / existing_keyfile_rel_path if existing_keyfile_rel_path else None
+    existing_keyfile_path = None
+    if existing_keyfile_rel_path:
+        mount = Path(mountpoint).resolve()
+        existing_keyfile_path = (mount / existing_keyfile_rel_path).resolve()
+        if not existing_keyfile_path.is_relative_to(mount):
+            raise ProvisioningError("The existing key file must be on the selected USB.")
+        if existing_keyfile_path != layout.keyfile_path and layout.keyfile_path.exists():
+            raise ProvisioningError("The destination Key.key already exists; refusing to overwrite it.")
+
+    if existing_keyfile_path is None and layout.keyfile_path.exists():
+        raise ProvisioningError("Key.key already exists. Select the matching existing key file or preserve it before adoption.")
 
     backup_path = layout.kdbx_path.with_name(layout.kdbx_path.name + ".pre-ash-backup")
     if backup_path.exists():
@@ -266,17 +276,26 @@ def adopt_existing_vault(
     vault_id = _new_vault_id()
     identity: DeviceIdentity | None = None
     local_secret: SecretBytes | None = None
-    generated_keyfile = existing_keyfile_path is None
+    generated_keyfile = existing_keyfile_path is None or existing_keyfile_path != layout.keyfile_path
+    handle_closed = False
+    metadata_before = {path: path.read_bytes() if path.exists() else None
+                       for path in (layout.vault_json, layout.devices_json, layout.integrity_json)}
+    slots_before = set(layout.keyslots_dir.glob("*.slot"))
     try:
         vms = keyslots.generate_vms()
         try:
-            if generated_keyfile:
+            if existing_keyfile_path is None:
                 generate_keyfile(layout.keyfile_path)
-                handle.rekey(password=keyslots.vms_to_kdbx_password(vms), keyfile=str(layout.keyfile_path))
-            else:
-                handle.rekey(password=keyslots.vms_to_kdbx_password(vms))
+            elif generated_keyfile:
+                fd = os.open(layout.keyfile_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, "wb") as target, existing_keyfile_path.open("rb") as source:
+                    shutil.copyfileobj(source, target)
+                    target.flush()
+                    os.fsync(target.fileno())
+            handle.rekey(password=keyslots.vms_to_kdbx_password(vms), keyfile=str(layout.keyfile_path))
             handle.save()
             handle.close()
+            handle_closed = True
 
             _write_vault_json(layout, vault_id, name)
             _bootstrap_password_slot_and_devices(layout, vault_id, vms, new_master_password, argon2_params)
@@ -289,11 +308,19 @@ def adopt_existing_vault(
         finally:
             vms.wipe()
     except Exception as exc:
+        if not handle_closed:
+            handle.close()
         shutil.copy2(backup_path, layout.kdbx_path)
-        try:
-            layout.vault_json.unlink()
-        except FileNotFoundError:
-            pass
+        # Preserve pre-existing unrelated metadata; remove only slots made
+        # by this attempt. Never delete all contents of a legacy directory.
+        for path, contents in metadata_before.items():
+            if contents is None:
+                path.unlink(missing_ok=True)
+            else:
+                with atomic_writer(path) as fh:
+                    fh.write(contents)
+        for path in set(layout.keyslots_dir.glob("*.slot")) - slots_before:
+            path.unlink(missing_ok=True)
         if generated_keyfile:
             try:
                 layout.keyfile_path.unlink()

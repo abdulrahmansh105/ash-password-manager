@@ -190,10 +190,11 @@ treated as secret, and never used as key material themselves.
   operating inside the same logged-in user session.** No
   "unlock without a password" feature on any platform can promise
   otherwise; this one does not try to.
-- **Losing the master password loses the vault.** There is no
-  recovery slot, no emergency kit, and no code-based bypass, by
-  explicit design decision. `docs/BACKUP_RECOVERY.md` explains the
-  one thing that does help: keeping an encrypted backup.
+- **Losing the master password without a working Local Key loses access.**
+  A valid enrolled Local Key can reset the master-password slot (Settings);
+  without either credential there is no code-based bypass. An independent
+  version 2 encrypted backup requires its backup passphrase and the master
+  password from backup time; see `docs/BACKUP_RECOVERY.md`.
 - **The background USB-watch agent is a disclosed, optional resident
   process** (spec section 30 requires it for auto-discovery). It holds
   no vault handle and no secret material of any kind -- see
@@ -222,3 +223,31 @@ treated as secret, and never used as key material themselves.
   inherently best-effort** across arbitrary third-party UIs -- the
   Safety Guard exists specifically because of this, unchanged from the
   original design.
+
+## Backup and input hardening (0.3.0)
+
+Version 2 backups include `password.slot` inside their authenticated
+archive, but exclude device slots and Local Keys. A copied older archive
+still accepts its snapshot's master password: password changes and device
+revocation cannot revoke credentials an attacker already copied. Keep
+archives protected and remove obsolete copies according to your policy.
+Version 1 omitted this required slot and is not independently recoverable.
+
+Argon2 headers from slots and archives are validated before calling native
+code: integer time cost 1–16, parallelism 1–16, memory at least 8 KiB per
+lane and at most 512 MiB, with a combined work ceiling of 4 GiB-passes.
+Production defaults remain 256 MiB, four passes, two lanes. These upper
+bounds limit resource exhaustion from hostile unauthenticated metadata;
+custom headers beyond the limits are rejected without attempting derivation.
+
+Auto-Type only assigns HIGH confidence to an exact application-class
+match. Partial and regex matches require confirmation. Application classes
+are desktop metadata, not proof of website origin; a browser class cannot
+identify its current website. In-progress login checks the current class
+when detection is available and cancels subsequent steps if it changes or
+the session locks. A subprocess already sending input cannot be recalled.
+
+Clipboard copies request wl-copy's `--sensitive` hint. Cooperating clipboard
+managers can honor it, but other programs in the logged-in session can still
+read the clipboard. Cleanup preserves a later value copied by another app;
+clipboard ownership comparison and clearing are not an atomic compositor API.

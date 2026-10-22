@@ -1,3 +1,4 @@
+from ..core.security.clipboard import ClipboardManager
 from .atspi_backend import AtspiBackend
 from .backend import AuthInputBackend, BackendOutcome, InputResult
 from .clipboard_backend import ClipboardPasteBackend
@@ -6,6 +7,9 @@ from .ydotool_backend import YdotoolBackend
 
 def select_backend(
     allow_clipboard_fallback: bool = False,
+    *,
+    clipboard: ClipboardManager | None = None,
+    clear_after_seconds: int | None = 20,
 ) -> AuthInputBackend | None:
     """Pick the best available backend, in preference order:
     AT-SPI (structural, safest) > ydotool (global synthetic input) >
@@ -20,7 +24,7 @@ def select_backend(
     if ydotool.is_available():
         return ydotool
     if allow_clipboard_fallback:
-        clip = ClipboardPasteBackend()
+        clip = ClipboardPasteBackend(clipboard=clipboard, clear_after_seconds=clear_after_seconds)
         if clip.is_available():
             return clip
     return None

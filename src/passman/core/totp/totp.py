@@ -65,6 +65,7 @@ class TotpConfig:
     # what they claim.
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "secret_base32", normalize_base32_secret(self.secret_base32))
         if self.algorithm not in _ALGOS:
             raise InvalidTotpSecretError(f"Unsupported TOTP algorithm: {self.algorithm}")
         if not (6 <= self.digits <= 10):
@@ -107,6 +108,8 @@ def verify_totp(
     counter = int(t // config.period)
     secret_bytes = base64.b32decode(config.secret_base32)
     for offset in range(-window, window + 1):
+        if counter + offset < 0:
+            continue
         candidate = _hotp(secret_bytes, counter + offset, config.digits, config.algorithm)
         if hmac.compare_digest(candidate, code):
             return True

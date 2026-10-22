@@ -38,7 +38,7 @@ class RandomPasswordPolicy:
             chars += self.symbols
         if self.exclude_ambiguous:
             chars = "".join(c for c in chars if c not in _AMBIGUOUS)
-        return chars
+        return "".join(dict.fromkeys(chars))
 
 
 class PolicyError(Exception):
@@ -68,7 +68,10 @@ def generate_random_password(policy: RandomPasswordPolicy) -> str:
     if policy.use_digits:
         classes.append([c for c in string.digits if not policy.exclude_ambiguous or c not in _AMBIGUOUS])
     if policy.use_symbols:
-        classes.append(list(policy.symbols))
+        symbols = [c for c in dict.fromkeys(policy.symbols) if not policy.exclude_ambiguous or c not in _AMBIGUOUS]
+        if not symbols:
+            raise PolicyError("The selected symbol class has no usable characters.")
+        classes.append(symbols)
 
     if policy.length < len(classes):
         raise PolicyError(

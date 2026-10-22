@@ -126,6 +126,8 @@ def _cmd_backup_create(args: argparse.Namespace) -> int:
     except BackupError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    finally:
+        passphrase.wipe()
     print(f"[OK] Backup written to {output}")
     return 0
 
@@ -142,6 +144,8 @@ def _cmd_backup_verify(args: argparse.Namespace) -> int:
     except BackupError as exc:
         print(f"error: backup is invalid: {exc}", file=sys.stderr)
         return 1
+    finally:
+        passphrase.wipe()
     print("[OK] Backup is valid and the passphrase is correct.")
     return 0
 
@@ -156,13 +160,18 @@ def _cmd_backup_restore(args: argparse.Namespace) -> int:
     layout = VaultLayout.at(args.mountpoint, args.container_path)
     passphrase = SecretBytes(getpass.getpass("Backup passphrase: "))
     try:
-        restore_backup(Path(args.file), layout, passphrase)
+        restore_backup(
+            Path(args.file), layout, passphrase,
+            legacy_password_slot=Path(args.legacy_password_slot) if args.legacy_password_slot else None,
+        )
     except BackupError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    finally:
+        passphrase.wipe()
     print(f"[OK] Restored to {layout.container_dir}")
     print("This device is not yet registered for the restored vault -- run `ash-password-manager sign-in`")
-    print("with its USB connected and log in with the master password to register it.")
+    print("with its USB connected and log in with the master password in effect when the backup was created.")
     return 0
 
 
@@ -384,7 +393,7 @@ def _build_parser() -> argparse.ArgumentParser:
     devices_revoke_p.add_argument("--vault-id", default=None)
     devices_revoke_p.set_defaults(func=_cmd_devices_revoke)
 
-    backup = sub.add_parser("backup", help="Encrypted vault backup/restore (never Local Keys or the master secret).")
+    backup = sub.add_parser("backup", help="Encrypted vault backup/restore (includes the wrapped password slot; never Local Keys).")
     backup_sub = backup.add_subparsers(dest="backup_command")
     backup_create_p = backup_sub.add_parser("create", help="Create an encrypted backup of a vault.")
     backup_create_p.add_argument("--vault-id", default=None)
@@ -397,6 +406,10 @@ def _build_parser() -> argparse.ArgumentParser:
     backup_restore_p.add_argument("--file", required=True)
     backup_restore_p.add_argument("--mountpoint", required=True)
     backup_restore_p.add_argument("--container-path", default="ASH")
+    backup_restore_p.add_argument(
+        "--legacy-password-slot", default=None,
+        help="For version-1 backups only: surviving password.slot from the original vault.",
+    )
     backup_restore_p.set_defaults(func=_cmd_backup_restore)
 
     sub.add_parser(

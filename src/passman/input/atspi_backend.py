@@ -20,6 +20,7 @@ always-available fallback.
 from __future__ import annotations
 
 from .backend import AuthInputBackend, BackendOutcome, InputResult
+from .ydotool_backend import YdotoolBackend
 
 try:
     import gi
@@ -39,6 +40,9 @@ _EDITABLE_ROLES = {"entry", "text", "password text"}
 class AtspiBackend(AuthInputBackend):
     name = "atspi"
 
+    def __init__(self, navigation_backend=None) -> None:
+        self._navigation = navigation_backend or YdotoolBackend()
+
     def is_available(self) -> bool:
         if not _ATSPI_IMPORT_OK:
             return False
@@ -48,7 +52,31 @@ class AtspiBackend(AuthInputBackend):
         except Exception:  # noqa: BLE001
             return False
 
+    def _bus_available(self) -> bool:
+        if not _ATSPI_IMPORT_OK:
+            return False
+        try:
+            from gi.repository import Gio
+
+            bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+            response = bus.call_sync(
+                "org.a11y.Bus", "/org/a11y/bus", "org.a11y.Bus", "GetAddress",
+                None, None, Gio.DBusCallFlags.NONE, 1000, None,
+            )
+            address = response.unpack()[0]
+            connection = Gio.DBusConnection.new_for_address_sync(
+                address,
+                Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT | Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION,
+                None, None,
+            )
+            connection.close_sync(None)
+            return True
+        except Exception:  # missing or inaccessible session/accessibility bus
+            return False
+
     def _get_focused_editable(self):
+        if not self._bus_available():
+            return None
         try:
             desktop = Atspi.get_desktop(0)
         except Exception:  # noqa: BLE001
@@ -94,9 +122,8 @@ class AtspiBackend(AuthInputBackend):
             return BackendOutcome(InputResult.UNAVAILABLE, "no focused editable accessible found")
         try:
             editable = obj.get_editable_text_iface()
-            text_len = obj.get_character_count()
-            editable.set_text_contents(secret.decode("utf-8"))
-            del text_len
+            if editable.set_text_contents(secret.decode("utf-8")) is False:
+                return BackendOutcome(InputResult.FAILED, "AT-SPI rejected field content")
             return BackendOutcome(InputResult.OK)
         except Exception:  # noqa: BLE001
             return BackendOutcome(InputResult.FAILED, "AT-SPI set_text_contents failed")
@@ -105,10 +132,14 @@ class AtspiBackend(AuthInputBackend):
         # AT-SPI has no generic "press Tab in the focused widget" action
         # that works uniformly across toolkits; navigation keys are left
         # to the ydotool backend even when AT-SPI handled the text entry.
-        return BackendOutcome(InputResult.UNAVAILABLE, "navigation keys not handled by AT-SPI backend")
+        if self._navigation.is_available():
+            return self._navigation.press_key(key)
+        return BackendOutcome(InputResult.UNAVAILABLE, "ydotool is required for navigation keys")
 
     def press_combo(self, combo: str) -> BackendOutcome:
-        return BackendOutcome(InputResult.UNAVAILABLE, "key combos not handled by AT-SPI backend")
+        if self._navigation.is_available():
+            return self._navigation.press_combo(combo)
+        return BackendOutcome(InputResult.UNAVAILABLE, "ydotool is required for key combinations")
 
     def focus_field(self, hint: str | None) -> BackendOutcome:
         # A precise "find the field whose accessible name/role matches

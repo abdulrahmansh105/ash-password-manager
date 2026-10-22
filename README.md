@@ -12,7 +12,7 @@
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-blue.svg">
   <img alt="Platform: Linux / Wayland" src="https://img.shields.io/badge/platform-Linux%20%2F%20Wayland-informational">
-  <img alt="Tests: 549 passing" src="https://img.shields.io/badge/tests-549%20passing-brightgreen">
+  <a href="https://github.com/abdulrahmansh105/ash-password-manager/actions/workflows/ci.yml"><img alt="Tests" src="https://github.com/abdulrahmansh105/ash-password-manager/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 Your vault lives on a USB drive you control; a master password protects
@@ -34,6 +34,14 @@ extension, no network dependency for normal operation.
 The public source and package ship no `Passwords.kdbx`, no `Key.key`,
 no key slots, and no Local Key. You create your own vault, on your own
 USB, during first-time setup -- see [Sign in](#sign-in--first-time-setup) below.
+
+## Updates in 0.3.0
+
+Recoverable encrypted backups, safer vault saves with stale-writer checks,
+stronger Auto-Type confirmation and cancellation, and editable website URLs
+and application targets. Existing vaults need no migration. See
+[CHANGELOG.md](CHANGELOG.md) for changes and [backup recovery](docs/BACKUP_RECOVERY.md)
+for the corrected handling of older version 1 archives.
 
 ## Contents
 
@@ -111,10 +119,10 @@ src/passman/
     crypto/           Argon2id + HKDF-SHA256 + AES-256-GCM key-slot format (docs/SECURITY.md)
     devices/          Local Key storage, libsecret pepper (optional), on-USB device registry
     vaults/           multi-vault local registry, traversal-safe on-USB layout, health checks
-    vault/            KDBX compatibility layer (kdbx.py, unchanged) + provisioning.py (guarded
-                       create / adopt-existing / rekey, all transactional)
+    vault/            KDBX compatibility layer with private atomic saves and stale-writer checks;
+                       guarded create / adopt-existing / rekey with encrypted rollback backup
     flows/            pure setup/login state machines + USB pick/unlock/mount orchestration
-    backup/           encrypted backup/restore (never Local Keys or the master secret)
+    backup/           encrypted backup/restore (includes the wrapped password slot, never Local Keys)
     accounts/         search + suggestion ranking over non-secret AccountSummary
     totp/             hand-rolled RFC 6238 (no third-party TOTP dependency)
     recovery/         recovery-code (de)serialization + explicit two-step reveal gate
@@ -145,7 +153,7 @@ src/passman/
   cli/                argparse CLI: sign-in/login/recover, devices, backup, agent, plus every
                        original subcommand, unchanged
 installer/            consent-based USB bootstrap (never auto-runs; see spec section 18)
-tests/                549 tests, fake data and synthetic fixtures only; several exercise the
+tests/                regression tests, fake data and synthetic fixtures only; several exercise the
                       real UDisks2/GlobalShortcuts-portal D-Bus services live where available
 demo/                 create_demo_vault.py -- builds + validates a fully fake demo vault
 docs/                 SECURITY, ARCHITECTURE, THREAT_MODEL, USB_SETUP, BACKUP_RECOVERY,
@@ -298,7 +306,7 @@ ash-password-manager sign-in            # Sign in (new) / Login (returning) -- t
 ash-password-manager recover            # same mechanism, framed for a new/reinstalled device
 ash-password-manager devices list       # list devices registered against a vault
 ash-password-manager devices revoke ID  # revoke a device's Local Key
-ash-password-manager backup create      # encrypted backup (never Local Keys or the master secret)
+ash-password-manager backup create      # encrypted backup (includes the wrapped password slot, never Local Keys)
 ash-password-manager backup verify --file ...
 ash-password-manager backup restore --file ... --mountpoint ...
 ash-password-manager agent              # run the optional USB-watch agent in the foreground
@@ -311,9 +319,10 @@ ash-password-manager generate template --template '...' --username ash --service
 ash-password-manager generate random --length 32
 ```
 
-`ashpm` is a short alias for `ash-password-manager`. No subcommand
-ever prints a password, TOTP secret, recovery code, Local Key, or key
-slot contents.
+`ashpm` is a short alias for `ash-password-manager`. Vault-management
+commands never print stored passwords, TOTP secrets, recovery codes, Local
+Keys, or key-slot contents. Generation commands print their requested
+newly generated password to standard output.
 
 ## Testing
 
@@ -322,10 +331,10 @@ source .venv/bin/activate
 python -m pytest -q
 ```
 
-549 tests: the original template engine/random generator/TOTP/
+The suite covers the original template engine/random generator/TOTP/
 recovery-codes/config-store/USB-identity/Safety-Guard/login-strategy/
 input-backend/session/Hyprland-integration/no-network-import suite
-(all still green, none rewritten), plus new coverage for the key-slot
+(retained with regression coverage), plus new coverage for the key-slot
 format (wrap/unwrap round-trips, tampered ciphertext/nonce/salt/AAD
 each independently rejected, device-binding divergence, revocation
 independence, the disaster-recovery invariant), device registry,

@@ -12,8 +12,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HERE="$ROOT/packaging/run-installer"
 DIST="$ROOT/dist"
+BUILD_PYTHON="${ASH_PM_PYTHON:-python3}"
 
-VERSION=$(python3 -c "
+VERSION=$("$BUILD_PYTHON" -c "
 import tomllib
 with open('$ROOT/pyproject.toml', 'rb') as f:
     print(tomllib.load(f)['project']['version'])
@@ -25,8 +26,10 @@ PAYLOAD="$WORKDIR/payload"
 mkdir -p "$PAYLOAD" "$DIST"
 
 echo "==> Building wheel for version $VERSION"
-python3 -m pip install --quiet --upgrade build >/dev/null 2>&1 || true
-python3 -m build --wheel --outdir "$WORKDIR/dist" "$ROOT" >/dev/null
+# Use explicit installed build tools; building must not upgrade the user's
+# environment or fetch dependencies implicitly.
+"$BUILD_PYTHON" -m build --wheel --no-isolation --outdir "$WORKDIR/dist" "$ROOT" >/dev/null
+"$BUILD_PYTHON" "$ROOT/scripts/check_wheel.py" "$WORKDIR"/dist/ash_password_manager-*-py3-none-any.whl
 
 cp "$WORKDIR"/dist/ash_password_manager-*-py3-none-any.whl "$PAYLOAD/"
 cp "$ROOT/password-manager.desktop" "$PAYLOAD/dev.ash.PasswordManager.desktop"

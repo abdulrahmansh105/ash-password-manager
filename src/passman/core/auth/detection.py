@@ -46,8 +46,12 @@ def get_active_window_context() -> DetectedContext:
         data = json.loads(result.stdout.decode("utf-8", errors="replace"))
     except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError):
         return DetectedContext(app_id=None, window_title=None)
-    app_id = data.get("class") or None
-    title = data.get("title") or None
+    if not isinstance(data, dict):
+        return DetectedContext(app_id=None, window_title=None)
+    app_id = data.get("class")
+    title = data.get("title")
+    app_id = app_id if isinstance(app_id, str) and app_id else None
+    title = title if isinstance(title, str) and title else None
     return DetectedContext(app_id=app_id, window_title=title)
 
 
@@ -65,6 +69,7 @@ def match_confidence(context: DetectedContext, app_identifiers: tuple[str, ...])
     - UNKNOWN: no configured identifier matches anything, or detection
       itself failed (no window info at all).
     """
+    app_identifiers = tuple(p for p in app_identifiers if isinstance(p, str) and p.strip())
     if not app_identifiers or (context.app_id is None and context.window_title is None):
         return Confidence.UNKNOWN
 
@@ -78,8 +83,13 @@ def match_confidence(context: DetectedContext, app_identifiers: tuple[str, ...])
 
     if context.app_id:
         for pat in app_identifiers:
-            if _matches(pat, context.app_id):
+            # A substring such as "discord" also matches "fake-discord".
+            # Regexes/partial matches are suggestions, never auto-proceed.
+            if not pat.startswith("re:") and pat.casefold() == context.app_id.casefold():
                 return Confidence.HIGH
+
+    if context.app_id and any(_matches(pat, context.app_id) for pat in app_identifiers):
+        return Confidence.LOW
 
     if context.window_title:
         for pat in app_identifiers:

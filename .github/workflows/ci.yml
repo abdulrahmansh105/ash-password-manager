@@ -1,0 +1,33 @@
+name: Tests and package
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GSETTINGS_BACKEND: memory
+      NO_AT_BRIDGE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install desktop libraries and test display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv python3-gi gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-atspi-2.0 gir1.2-udisks-2.0 xvfb dbus-x11
+      - name: Install project and build tools
+        run: |
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/python -m pip install '.[dev]' build setuptools wheel
+      - name: Run suite on a disposable display and D-Bus session
+        run: xvfb-run -a dbus-run-session -- .venv/bin/python -m pytest -q
+      - name: Build wheel
+        run: .venv/bin/python -m build --wheel --no-isolation
+      - name: Check wheel excludes credentials
+        run: .venv/bin/python scripts/check_wheel.py dist/*.whl
+      - name: Build consent-based installer without network dependency resolution
+        env:
+          ASH_PM_PYTHON: .venv/bin/python
+        run: bash packaging/run-installer/build.sh

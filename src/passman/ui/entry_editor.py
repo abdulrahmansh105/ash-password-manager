@@ -27,6 +27,7 @@ from ..core.totp.totp import (
     generate_totp,
     normalize_base32_secret,
 )
+from ..core.vault.kdbx import VaultError
 from ..core.vault.models import CATEGORY_CHOICES, CATEGORY_LABELS, DEFAULT_CATEGORY
 
 
@@ -181,6 +182,7 @@ class EntryEditorDialog(Adw.Dialog):
         self._name_row = Adw.EntryRow(title="Account Name")
         self._service_row = Adw.EntryRow(title="Website / Service")
         self._username_row = Adw.EntryRow(title="Username / Email")
+        self._url_row = Adw.EntryRow(title="Website URL")
         self._category_row = Adw.ComboRow(
             title="Category",
             model=Gtk.StringList.new([CATEGORY_LABELS[c] for c in CATEGORY_CHOICES]),
@@ -188,6 +190,7 @@ class EntryEditorDialog(Adw.Dialog):
         identity_group.add(self._name_row)
         identity_group.add(self._service_row)
         identity_group.add(self._username_row)
+        identity_group.add(self._url_row)
         identity_group.add(self._category_row)
         page.add(identity_group)
 
@@ -207,6 +210,16 @@ class EntryEditorDialog(Adw.Dialog):
         totp_btn.connect("clicked", self._on_add_totp)
         auth_group.add(totp_btn)
         page.add(auth_group)
+
+        identifiers_group = Adw.PreferencesGroup(
+            title="Auto-Type Targets",
+            description="One application window class or re: pattern per line. Exact window class matches can sign in automatically; other matches require confirmation.",
+        )
+        self._identifiers_view = Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD)
+        identifiers_scroll = Gtk.ScrolledWindow(min_content_height=60)
+        identifiers_scroll.set_child(self._identifiers_view)
+        identifiers_group.add(identifiers_scroll)
+        page.add(identifiers_group)
 
         recovery_group = Adw.PreferencesGroup(title="Recovery Codes")
         self._recovery_status = Gtk.Label(label="None saved", xalign=0)
@@ -237,6 +250,10 @@ class EntryEditorDialog(Adw.Dialog):
         bottom_bar.set_margin_end(16)
         bottom_bar.set_margin_top(8)
         bottom_bar.set_margin_bottom(16)
+        self._save_error = Gtk.Label(xalign=0, wrap=True)
+        self._save_error.add_css_class("pm-error-label")
+        self._save_error.set_visible(False)
+        page.add(self._save_error)
         bottom_bar.append(save_btn)
         toolbar_view.add_bottom_bar(bottom_bar)
 
@@ -246,6 +263,8 @@ class EntryEditorDialog(Adw.Dialog):
             self._name_row.set_text(secrets.display_name)
             self._service_row.set_text(secrets.service_name)
             self._username_row.set_text(secrets.username)
+            self._url_row.set_text(secrets.url)
+            self._identifiers_view.get_buffer().set_text("\n".join(secrets.app_identifiers))
             self._password_row.set_text(secrets.password.to_str())
             buf = self._notes_view.get_buffer()
             buf.set_text(secrets.notes or "")
@@ -282,7 +301,11 @@ class EntryEditorDialog(Adw.Dialog):
         vault = self._app.session.vault()
         buf = self._notes_view.get_buffer()
         notes = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
-        app_identifiers = [self._service_row.get_text().lower()] if self._service_row.get_text() else []
+        ids_buf = self._identifiers_view.get_buffer()
+        identifiers_text = ids_buf.get_text(ids_buf.get_start_iter(), ids_buf.get_end_iter(), False)
+        app_identifiers = [line.strip() for line in identifiers_text.splitlines() if line.strip()]
+        if self._entry_uuid is None and not app_identifiers and self._service_row.get_text():
+            app_identifiers = [self._service_row.get_text().lower()]
         selected_index = self._category_row.get_selected()
         category = CATEGORY_CHOICES[selected_index] if 0 <= selected_index < len(CATEGORY_CHOICES) else DEFAULT_CATEGORY
 
@@ -295,6 +318,7 @@ class EntryEditorDialog(Adw.Dialog):
                 username=self._username_row.get_text(),
                 password=self._password_row.get_text(),
                 notes=notes,
+                url=self._url_row.get_text(),
                 app_identifiers=json.dumps(app_identifiers),
                 category=category,
             )
@@ -304,16 +328,24 @@ class EntryEditorDialog(Adw.Dialog):
                 service_name=self._service_row.get_text(),
                 username=self._username_row.get_text(),
                 password=self._password_row.get_text(),
-                url="",
+                url=self._url_row.get_text(),
                 notes=notes,
                 app_identifiers=app_identifiers,
                 category=category,
             )
+        # Retain the created UUID if a write fails so retry updates the same
+        # pending entry rather than creating a duplicate.
+        self._entry_uuid = entry_uuid
         if self._totp_config is not None:
             vault.set_totp(entry_uuid, self._totp_config, issuer=self._service_row.get_text())
         if self._recovery_codes:
             vault.set_recovery_codes(entry_uuid, self._recovery_codes)
-        vault.save()
+        try:
+            vault.save()
+        except VaultError as exc:
+            self._save_error.set_label(str(exc))
+            self._save_error.set_visible(True)
+            return
 
         self._totp_config = None
         self._recovery_codes = []

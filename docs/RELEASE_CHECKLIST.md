@@ -2,8 +2,7 @@
 
 ## Before every release
 
-- [ ] `python -m pytest -q` -- full suite green (549+ tests at time of
-      writing; `pytest --collect-only -q | tail -1` to confirm the
+- [ ] `python -m pytest -q` -- full suite green (report environment-dependent skips; `pytest --collect-only -q | tail -1` to confirm the
       current count).
 - [ ] `git status` clean; nothing untracked that should be tracked (or
       vice versa).
@@ -81,8 +80,11 @@
       gets a different `ash-pass-manager.key`.
 - [ ] Revoking one device in Settings -> Devices does not affect the
       other.
-- [ ] `backup create` then `backup verify` round-trips on the scratch
-      vault.
+- [ ] `backup create` then `backup verify` succeeds on a scratch vault.
+- [ ] Restore onto a second scratch directory after removing the synthetic
+      source, then open the real encrypted KDBX through its password slot.
+      Confirm passwords, TOTP, recovery codes, tags, categories, URLs, notes,
+      and Auto-Type settings round-trip. A tar-file comparison is insufficient.
 - [ ] Pulling the scratch USB triggers a lock; plugging it back in
       (with the agent enabled) opens exactly one login window, not
       several.

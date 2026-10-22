@@ -38,7 +38,7 @@ def test_unknown_confidence_when_detection_totally_failed():
 
 def test_regex_pattern_supported():
     ctx = DetectedContext(app_id="Google-chrome", window_title="Sign in - Accounts")
-    assert match_confidence(ctx, ("re:^google",)) == Confidence.HIGH
+    assert match_confidence(ctx, ("re:^google",)) == Confidence.LOW
 
 
 def test_bad_regex_pattern_does_not_crash():

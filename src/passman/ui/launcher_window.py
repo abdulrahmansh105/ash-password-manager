@@ -26,6 +26,7 @@ from gi.repository import Adw, GLib, Gtk
 
 from ..core.accounts.repository import rank_by_context, search, suggested_and_other
 from ..core.auth.async_login import run_login_async
+from ..core.auth.detection import get_active_window_context
 from ..core.auth.engine import (
     GuardDecision,
     LoginOutcome,
@@ -409,19 +410,27 @@ class AccountPickerWindow(Adw.ApplicationWindow):
 
         def start_worker() -> bool:
             run_login_async(
-                lambda: select_backend(allow_clipboard_fallback=allow_clipboard_fallback),
+                lambda: select_backend(
+                    allow_clipboard_fallback=allow_clipboard_fallback,
+                    clipboard=self.app.session.clipboard,
+                    clear_after_seconds=self.app.settings.clipboard_timeout_seconds(),
+                ),
                 secrets,
                 strategy,
                 context,
                 guard_mode,
                 confirmed,
                 on_done=self._on_login_finished,
+                is_cancelled=lambda: not self.app.session.is_unlocked(),
+                context_provider=get_active_window_context,
             )
             return False
 
         GLib.timeout_add(250, start_worker)
 
     def _on_login_finished(self, result) -> None:
+        if not self.app.session.is_unlocked():
+            return
         self.set_visible(True)
         self.present()
         self._report_login_result(result)

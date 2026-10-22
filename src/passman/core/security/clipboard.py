@@ -20,6 +20,7 @@ Safety notes
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import subprocess
 import threading
@@ -41,6 +42,7 @@ class ClipboardManager:
         self._generation = 0
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
+        self._expected_digest: bytes | None = None
 
     @staticmethod
     def is_available() -> bool:
@@ -60,69 +62,64 @@ class ClipboardManager:
             )
 
         with self._lock:
+            try:
+                subprocess.run(
+                    ["wl-copy", "--sensitive"],
+                    input=text.encode("utf-8"), check=True, timeout=5,
+                )
+            except (subprocess.SubprocessError, OSError) as exc:
+                # Preserve the prior secret's timer when a replacement fails.
+                return ClipboardStatus(copied=False, error=f"Failed to copy to clipboard: {type(exc).__name__}")
             self._generation += 1
             generation = self._generation
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
-
-        try:
-            subprocess.run(
-                ["wl-copy"],
-                input=text.encode("utf-8"),
-                check=True,
-                timeout=5,
-            )
-        except (subprocess.SubprocessError, OSError) as exc:
-            return ClipboardStatus(copied=False, error=f"Failed to copy to clipboard: {type(exc).__name__}")
-
-        if timeout_seconds and timeout_seconds > 0:
-            timer = threading.Timer(
-                timeout_seconds, self._clear_if_unchanged, args=(generation, text)
-            )
-            timer.daemon = True
-            with self._lock:
+            self._expected_digest = hashlib.sha256(text.encode("utf-8")).digest()
+            if timeout_seconds and timeout_seconds > 0:
+                timer = threading.Timer(
+                    timeout_seconds, self._clear_if_unchanged,
+                    args=(generation, self._expected_digest),
+                )
+                timer.daemon = True
                 self._timer = timer
-            timer.start()
-
+                timer.start()
         return ClipboardStatus(copied=True)
 
     def cancel_pending_clear(self) -> None:
         with self._lock:
-            if self._timer is not None:
-                self._timer.cancel()
-                self._timer = None
+            self._cancel_timer_locked()
+            self._generation += 1
+
+    def _cancel_timer_locked(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
 
     def clear_now(self) -> None:
-        """Force-clear the clipboard immediately (used on lock)."""
-        self.cancel_pending_clear()
-        try:
-            subprocess.run(["wl-copy", "--clear"], timeout=5, check=False)
-        except (subprocess.SubprocessError, OSError):
-            pass
-
-    def _clear_if_unchanged(self, generation: int, expected_text: str) -> None:
+        """Clear only a value this manager copied; preserve unrelated user data."""
         with self._lock:
-            if generation != self._generation:
-                return
+            self._cancel_timer_locked()
+            self._generation += 1
+            if self._expected_digest is not None:
+                self._clear_owned_locked(self._expected_digest)
+
+    def _clear_owned_locked(self, expected_digest: bytes) -> None:
         try:
             result = subprocess.run(
-                ["wl-paste", "-n"],
-                capture_output=True,
-                timeout=5,
-                check=False,
+                ["wl-paste", "-n"], capture_output=True, timeout=5, check=False,
             )
-            current = result.stdout.decode("utf-8", errors="replace")
+            if result.returncode != 0 or hashlib.sha256(result.stdout).digest() != expected_digest:
+                self._expected_digest = None
+                return
+            subprocess.run(["wl-copy", "--clear"], timeout=5, check=True)
+            self._expected_digest = None
         except (subprocess.SubprocessError, OSError):
-            return
+            pass
 
-        if current != expected_text:
-            return
-
+    def _clear_if_unchanged(self, generation: int, expected_digest: bytes) -> None:
         with self._lock:
             if generation != self._generation:
                 return
-        try:
-            subprocess.run(["wl-copy", "--clear"], timeout=5, check=False)
-        except (subprocess.SubprocessError, OSError):
-            pass
+            self._clear_owned_locked(expected_digest)
+            self._timer = None

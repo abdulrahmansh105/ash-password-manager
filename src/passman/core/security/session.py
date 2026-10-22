@@ -57,6 +57,11 @@ class Session:
         if self._clipboard is None:
             self._clipboard = ClipboardManager()
 
+    @property
+    def clipboard(self) -> ClipboardManager:
+        assert self._clipboard is not None
+        return self._clipboard
+
     def set_on_lock(self, callback: OnLockCallback | None) -> None:
         self._on_lock = callback
 
@@ -79,10 +84,10 @@ class Session:
         return self._vault
 
     def touch_activity(self, now: float | None = None) -> None:
-        self._last_activity = time.time() if now is None else now
+        self._last_activity = time.monotonic() if now is None else now
 
     def seconds_since_activity(self, now: float | None = None) -> float:
-        t = time.time() if now is None else now
+        t = time.monotonic() if now is None else now
         return t - self._last_activity
 
     def check_inactivity(self, now: float | None = None) -> bool:
@@ -110,7 +115,10 @@ class Session:
             except Exception:  # noqa: BLE001 - lock must never fail to complete
                 pass
         if self._clipboard is not None:
-            self._clipboard.clear_now()
+            try:
+                self._clipboard.clear_now()
+            except Exception:  # locking must still destroy sensitive UI state
+                pass
         _log.info("session locked", extra=safe_extra(event="session_lock", reason=reason.value))
         if self._on_lock is not None:
             self._on_lock(reason)

@@ -125,12 +125,12 @@ def check_vault_health(layout: VaultLayout) -> HealthReport:
     manifest = _load_manifest(layout)
     if manifest is None:
         checks.append(HealthCheck("Integrity manifest", HealthStatus.WARNING, "No manifest recorded yet"))
+    elif not isinstance(manifest, dict) or not isinstance(manifest.get("sha256"), dict):
+        checks.append(HealthCheck("Integrity manifest", HealthStatus.WARNING, "Malformed integrity manifest"))
     else:
-        mismatches = [
-            name
-            for name, path in _tracked_files(layout).items()
-            if manifest.get("sha256", {}).get(name) != _sha256_file(path)
-        ]
+        current = {name: _sha256_file(path) for name, path in _tracked_files(layout).items()}
+        recorded = manifest["sha256"]
+        mismatches = [name for name in sorted(set(current) | set(recorded)) if recorded.get(name) != current.get(name)]
         if mismatches:
             checks.append(
                 HealthCheck(

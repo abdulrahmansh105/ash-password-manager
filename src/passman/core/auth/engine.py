@@ -88,6 +88,8 @@ class LoginEngine:
         guard_mode: SafetyGuardMode,
         confirmed: bool = False,
         on_step: Callable[[AuthStep, bool], None] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
+        context_provider: Callable[[], DetectedContext] | None = None,
     ) -> LoginResult:
         """Run ``strategy``. If the Safety Guard requires confirmation
         and ``confirmed`` is not True, returns NEEDS_CONFIRMATION without
@@ -100,24 +102,40 @@ class LoginEngine:
         per-step report without ever seeing secret content. Disabled
         steps (``AuthStep.enabled is False``) are skipped entirely and
         never reach ``on_step`` or the backend."""
-        confidence = confidence_for_account(context, secrets)
-        decision = evaluate_safety_guard(guard_mode, confidence)
-        if decision == GuardDecision.CONFIRM_REQUIRED and not confirmed:
-            return LoginResult(LoginOutcome.NEEDS_CONFIRMATION, "target confidence not high")
-
-        if self._backend is None:
-            return LoginResult(LoginOutcome.NO_BACKEND, "no input backend available")
-
         try:
+            confidence = confidence_for_account(context, secrets)
+            decision = evaluate_safety_guard(guard_mode, confidence)
+            if decision == GuardDecision.CONFIRM_REQUIRED and not confirmed:
+                return LoginResult(LoginOutcome.NEEDS_CONFIRMATION, "target confidence not high")
+            if self._backend is None:
+                return LoginResult(LoginOutcome.NO_BACKEND, "no input backend available")
             for step in strategy.steps:
                 if not step.enabled:
                     continue
-                ok = self._run_step(step, secrets)
+                if is_cancelled is not None and is_cancelled():
+                    return LoginResult(LoginOutcome.FAILED, "login cancelled because the session locked")
+                if context_provider is not None and context.app_id:
+                    current = context_provider()
+                    if current.app_id != context.app_id:
+                        return LoginResult(LoginOutcome.FAILED, "target application changed; login stopped")
+                if step.action == StepAction.WAIT and is_cancelled is not None:
+                    remaining = max(0, int(step.value or "0")) / 1000.0
+                    while remaining > 0:
+                        if is_cancelled():
+                            return LoginResult(LoginOutcome.FAILED, "login cancelled because the session locked")
+                        interval = min(remaining, 0.1)
+                        self._sleep(interval)
+                        remaining -= interval
+                    ok = True
+                else:
+                    ok = self._run_step(step, secrets)
                 if on_step is not None:
                     on_step(step, ok)
                 if not ok:
                     return LoginResult(LoginOutcome.FAILED, f"step failed: {step.action.value}")
             return LoginResult(LoginOutcome.SUCCESS, "login sequence completed")
+        except Exception:
+            return LoginResult(LoginOutcome.FAILED, "login failed; no further input was sent")
         finally:
             secrets.wipe()
 

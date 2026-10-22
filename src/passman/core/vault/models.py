@@ -84,6 +84,10 @@ class AccountSecrets:
     def wipe(self) -> None:
         self.password.wipe()
         self.recovery_codes.clear()
+        self.username = ""
+        self.url = ""
+        self.notes = ""
+        self.totp = None
 
     def __enter__(self) -> AccountSecrets:
         return self

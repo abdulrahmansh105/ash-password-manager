@@ -30,7 +30,11 @@ def _make_source_vault(fake_usb) -> VaultLayout:
     layout.keyfile_path.write_bytes(b"fake-keyfile-bytes")
     layout.vault_json.write_text(json.dumps({"vault_id": "v1", "name": "Test Vault"}))
     layout.devices_json.write_text(json.dumps([{"device_id": "d1", "label": "Laptop"}]))
-    (layout.keyslots_dir / "password.slot").write_text('{"secret": "must-not-be-backed-up"}')
+    from passman.core.crypto.keyslots import create_password_slot
+
+    with SecretBytes(b"v" * 32) as vms, SecretBytes("master-password") as password:
+        slot = create_password_slot("v1", "password", password, vms, params=FAST)
+    (layout.keyslots_dir / "password.slot").write_text(json.dumps(slot.to_dict()))
     (layout.keyslots_dir / "device-d1.slot").write_text('{"secret": "must-not-be-backed-up"}')
     return layout
 
@@ -58,7 +62,7 @@ def test_create_and_restore_round_trip(fake_usb, tmp_path):
     assert json.loads(destination.devices_json.read_text())[0]["device_id"] == "d1"
 
 
-def test_backup_excludes_key_slots(fake_usb, tmp_path):
+def test_backup_excludes_device_slots(fake_usb, tmp_path):
     source = _make_source_vault(fake_usb)
     archive_path = tmp_path / "backup.ashbak"
     create_backup(source, archive_path, SecretBytes("backup-passphrase"), params=FAST)

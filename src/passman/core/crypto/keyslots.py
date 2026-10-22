@@ -79,7 +79,7 @@ def _b64(data: bytes) -> str:
 
 
 def _unb64(data: str) -> bytes:
-    return base64.urlsafe_b64decode(data.encode("ascii"))
+    return base64.b64decode(data.encode("ascii"), altchars=b"-_", validate=True)
 
 
 def _aad(vault_id: str, slot_id: str, kind: SlotKind) -> bytes:
@@ -132,7 +132,11 @@ class KeySlot:
     @staticmethod
     def from_dict(d: dict[str, Any]) -> KeySlot:
         try:
-            version = int(d["version"])
+            if not isinstance(d, dict):
+                raise ValueError("Key slot must be an object")
+            version = d["version"]
+            if type(version) is not int:
+                raise ValueError("Version must be an integer")
             if version != SLOT_FORMAT_VERSION:
                 raise SlotFormatError(f"Unsupported key-slot format version: {version}")
             kind = SlotKind(d["kind"])
@@ -147,6 +151,10 @@ class KeySlot:
                 version=version,
                 label=str(d.get("label", "")),
             )
+            if not slot.vault_id or not slot.slot_id:
+                raise ValueError("Missing slot identity")
+            if not 16 <= len(slot.salt) <= 64 or len(box.nonce) != 12 or len(box.tag) != 16 or len(box.ciphertext) != VMS_LEN:
+                raise ValueError("Invalid sealed key dimensions")
             if kind is SlotKind.PASSWORD:
                 argon2_raw = d.get("argon2")
                 slot.argon2_params = Argon2Params.from_dict(argon2_raw) if argon2_raw else Argon2Params()
@@ -158,7 +166,7 @@ class KeySlot:
             return slot
         except SlotFormatError:
             raise
-        except (KeyError, ValueError, TypeError) as exc:
+        except (KeyError, ValueError, TypeError, AttributeError, UnicodeError) as exc:
             raise SlotFormatError(f"Malformed key slot: {type(exc).__name__}") from exc
 
 

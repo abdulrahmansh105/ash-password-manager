@@ -45,11 +45,11 @@ core/vaults/
                core.devices.registry, which is the devices *inside* one vault
 
 core/vault/
-  kdbx.py         KDBX4 compatibility layer (pre-existing, unmodified except
-                  one additive VaultHandle.rekey() method for adoption)
+  kdbx.py         KDBX4 compatibility layer, private atomic saves, stale-writer
+                  detection, and credential rekeying for adoption
   provisioning.py create_new_vault() / adopt_existing_vault(): guarded,
-                  transactional (temp-directory-then-rename, or
-                  backup-then-rollback), the only two ways a vault gets made
+                  private staged creation or backup-and-rollback adoption;
+                  interrupted adoption retains the pre-ASH encrypted backup
 ```
 
 ## On-USB layout
