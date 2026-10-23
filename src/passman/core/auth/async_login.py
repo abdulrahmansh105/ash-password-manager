@@ -3,7 +3,7 @@ executor off the GTK main thread.
 
 Root cause of the "Not Responding" bug this module fixes: ``LoginEngine.
 run()`` (``.engine``), ``select_backend()`` (``..input``, which probes
-AT-SPI and shells out to ``pgrep`` for ydotoold), and
+AT-SPI and probes ydotool's local socket), and
 ``get_active_window_context()`` (``.detection``, which shells out to
 ``hyprctl``) are all plain blocking calls -- ``subprocess.run()`` with
 multi-second timeouts, real AT-SPI accessibility-tree walks, and
@@ -105,7 +105,7 @@ def run_login_async(
     context_provider: Callable[[], DetectedContext] | None = None,
 ) -> threading.Thread:
     """Runs one full sign-in -- backend selection (AT-SPI probe / ydotool
-    ``pgrep``), then ``LoginEngine.run()`` (subprocess calls and WAIT-step
+    socket probe), then ``LoginEngine.run()`` (subprocess calls and WAIT-step
     sleeps for every step) -- entirely on a background thread.
 
     ``backend_factory`` is called on that background thread too (not by

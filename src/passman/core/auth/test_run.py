@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from collections.abc import Callable
 
 from ..security.memory import SecretBytes
 from ..totp.totp import TotpConfig
@@ -92,6 +93,8 @@ def run_test(
     include_totp: bool,
     confirmed: bool = False,
     sleep_fn=time.sleep,
+    is_cancelled: Callable[[], bool] | None = None,
+    context_provider: Callable[[], DetectedContext] | None = None,
 ) -> TestRunResult:
     """Run ``strategy`` with fake secrets and report the outcome plus a
     per-step OK/FAILED breakdown (labels only, never typed values)."""
@@ -105,7 +108,10 @@ def run_test(
         reports.append(StepReport(label=STEP_LABELS.get(step.action, step.action.value), ok=ok))
 
     engine = LoginEngine(backend, sleep_fn=sleep_fn)
-    result = engine.run(secrets, strategy, context, guard_mode, confirmed=confirmed, on_step=on_step)
+    result = engine.run(
+        secrets, strategy, context, guard_mode, confirmed=confirmed, on_step=on_step,
+        is_cancelled=is_cancelled, context_provider=context_provider,
+    )
     return TestRunResult(
         outcome=result.outcome,
         detail=result.detail,

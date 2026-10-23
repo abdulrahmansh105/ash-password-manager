@@ -2,9 +2,8 @@
 require an explicit "Reveal" action, preferably with a second
 confirmation, and never appear automatically).
 
-Opened via secondary-click (right-click) on an account tile -- kept out
-of the primary single-click path (which is full sign-in) so a stray
-click never exposes anything.
+Opened from a manager entry or secondary-click on the legacy account
+picker. Real Auto-Type requires a separate confirmation and target handoff.
 """
 
 from __future__ import annotations
@@ -17,7 +16,12 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 
+from ..core.auth.async_login import run_blocking_async
+from ..core.auth.detection import get_active_window_context
+from ..core.auth.engine import LoginEngine, LoginOutcome, SafetyGuardMode
+from ..core.auth.strategy import AuthStrategy
 from ..core.recovery.codes import RevealGate
+from ..input import select_backend
 from .entry_editor import EntryEditorDialog
 from .strategy_editor import StrategyEditorDialog
 from .widgets import icon_button, page_intro, style_window
@@ -28,6 +32,7 @@ class AccountDetailDialog(Adw.Dialog):
         super().__init__(title="Account Details", content_width=560, content_height=680)
         style_window(self, app.settings)
         self._reveal_timer = None
+        self._autotype_running = False
         self.connect("closed", self._on_closed)
         self._app = app
         self._entry_uuid = entry_uuid
@@ -74,6 +79,9 @@ class AccountDetailDialog(Adw.Dialog):
             title="Authentication Flow",
             description="How full sign-in fills this account's fields, in order.",
         )
+        self._autotype_btn = Gtk.Button(label="Auto-Type", hexpand=True)
+        self._autotype_btn.connect("clicked", self._on_autotype)
+        auth_flow_group.add(self._autotype_btn)
         edit_strategy_btn = Gtk.Button(label="Edit Auto-Type Strategy", hexpand=True)
         edit_strategy_btn.connect(
             "clicked",
@@ -154,6 +162,82 @@ class AccountDetailDialog(Adw.Dialog):
             self.close()
 
         EntryEditorDialog(self._app, on_saved=on_saved, entry_uuid=self._entry_uuid).present(self)
+
+    def _on_autotype(self, _btn) -> None:
+        if self._autotype_running or not self._app.session.is_unlocked():
+            return
+        confirm = Adw.AlertDialog(
+            heading="Auto-Type this account?",
+            body=(
+                "ASH will hide for 5 seconds. Switch to the target app and click its "
+                "first login field. This account's strategy will type your real "
+                "credentials into that window and may submit the form. Check the "
+                "website and selected field before the delay ends."
+            ),
+        )
+        confirm.add_response("cancel", "Cancel")
+        confirm.add_response("type", "Start Auto-Type in 5 seconds")
+        confirm.set_default_response("cancel")
+        confirm.set_close_response("cancel")
+        confirm.set_response_appearance("type", Adw.ResponseAppearance.SUGGESTED)
+        self._autotype_running = True
+
+        def on_response(_dialog, response):
+            if response != "type" or not self._app.session.is_unlocked():
+                self._autotype_running = False
+                return
+            parent = self.get_root()
+            if not isinstance(parent, Gtk.Window):
+                self._autotype_running = False
+                return
+            settings = self._app.settings
+            parent.set_visible(False)
+
+            def finish(result=None):
+                self._autotype_running = False
+                if not self._app.session.is_unlocked():
+                    return
+                if result is not None and result.outcome is LoginOutcome.SUCCESS:
+                    message = "Auto-Type sequence completed"
+                elif result is not None and result.outcome is LoginOutcome.NO_BACKEND:
+                    message = "No input method available. Enable ydotoold or AT-SPI."
+                else:
+                    message = "Unable to complete Auto-Type. No further input was sent."
+                self._toast.add_toast(Adw.Toast(title=message))
+                parent.present()
+
+            def work():
+                if not self._app.session.is_unlocked():
+                    return None
+                context = get_active_window_context()
+                if not context.app_id and not context.window_id:
+                    raise RuntimeError("target window unavailable")
+                backend = select_backend(
+                    allow_clipboard_fallback=settings.clipboard_fallback_enabled,
+                    clipboard=self._app.session.clipboard,
+                    clear_after_seconds=settings.clipboard_timeout_seconds(),
+                )
+                if not self._app.session.is_unlocked():
+                    return None
+                with self._app.session.vault().get_account_secrets(self._entry_uuid) as secrets:
+                    return LoginEngine(backend).run(
+                        secrets, AuthStrategy.from_json(secrets.auth_strategy_json), context,
+                        SafetyGuardMode(settings.safety_guard_mode), confirmed=True,
+                        is_cancelled=lambda: not self._app.session.is_unlocked(),
+                        context_provider=get_active_window_context,
+                    )
+
+            def start_worker():
+                if not self._app.session.is_unlocked():
+                    self._autotype_running = False
+                    return False
+                run_blocking_async(work, finish, on_error=lambda _: finish())
+                return False
+
+            GLib.timeout_add(5000, start_worker)
+
+        confirm.connect("response", on_response)
+        confirm.present(self)
 
     def _copy_field(self, field: str) -> None:
         from ..core.totp.totp import InvalidTotpSecretError, generate_totp

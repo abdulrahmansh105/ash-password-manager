@@ -22,6 +22,7 @@ from enum import Enum
 class DetectedContext:
     app_id: str | None  # window class, e.g. "discord", "firefox"
     window_title: str | None
+    window_id: str | None = None  # compositor address, distinct even for the same app
 
 
 class Confidence(Enum):
@@ -52,7 +53,9 @@ def get_active_window_context() -> DetectedContext:
     title = data.get("title")
     app_id = app_id if isinstance(app_id, str) and app_id else None
     title = title if isinstance(title, str) and title else None
-    return DetectedContext(app_id=app_id, window_title=title)
+    address = data.get("address")
+    address = address if isinstance(address, str) and address else None
+    return DetectedContext(app_id=app_id, window_title=title, window_id=address)
 
 
 def match_confidence(context: DetectedContext, app_identifiers: tuple[str, ...]) -> Confidence:

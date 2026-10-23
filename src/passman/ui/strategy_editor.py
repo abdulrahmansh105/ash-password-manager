@@ -19,11 +19,11 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, GLib, Gtk
 
 from ..core.auth.async_login import run_blocking_async
 from ..core.auth.detection import get_active_window_context
-from ..core.auth.engine import LoginOutcome, SafetyGuardMode
+from ..core.auth.engine import SafetyGuardMode
 from ..core.auth.strategy import (
     BUILTIN_STRATEGIES,
     DEFAULT_STRATEGY,
@@ -183,6 +183,7 @@ class StrategyEditorDialog(Adw.Dialog):
         self._account_has_password = account_has_password
         self._app_identifiers = app_identifiers
         self._on_saved = on_saved
+        self._test_running = False
 
         raw = app.session.vault().get_auth_strategy_json(entry_uuid)
         self._strategy_name = AuthStrategy.from_json(raw).name
@@ -359,69 +360,57 @@ class StrategyEditorDialog(Adw.Dialog):
     # -- test strategy --------------------------------------------------------
 
     def _on_test_strategy(self, _btn) -> None:
-        # Active-window detection (a `hyprctl` subprocess call), backend
-        # selection (an AT-SPI probe / ydotool `pgrep`), and the test run
-        # itself (subprocess calls, WAIT-step sleeps) all block -- none of
-        # them may run on this (GTK main) thread. See
-        # core.auth.async_login for why; this handler hands the whole
-        # thing to a background thread and returns immediately.
+        if self._test_running or not self._app.session.is_unlocked():
+            return
         strategy = AuthStrategy(name=self._strategy_name, steps=self._steps)
-        clipboard_fallback = self._app.settings.clipboard_fallback_enabled
-        guard_mode = SafetyGuardMode(self._app.settings.safety_guard_mode)
-        self._test_result_label.set_text("Testing strategy…")
-
-        def work():
-            context = get_active_window_context()
-            backend = select_backend(
-                allow_clipboard_fallback=clipboard_fallback,
-                clipboard=self._app.session.clipboard,
-                clear_after_seconds=self._app.settings.clipboard_timeout_seconds(),
-            )
-            result = run_test(
-                backend,
-                strategy,
-                context,
-                guard_mode,
-                entry_uuid=self._entry_uuid,
-                display_name=self._display_name,
-                service_name=self._service_name,
-                app_identifiers=self._app_identifiers,
-                include_totp=self._account_has_totp,
-                confirmed=False,
-            )
-            return context, result
-
-        def on_done(payload) -> None:
-            context, result = payload
-            if result.outcome == LoginOutcome.NEEDS_CONFIRMATION:
-                self._show_test_confirmation(strategy, context)
-                return
-            self._render_test_result(result)
-
-        run_blocking_async(work, on_done)
-
-    def _show_test_confirmation(self, strategy: AuthStrategy, context) -> None:
-        window_desc = context.app_id or context.window_title or "an unrecognized window"
         confirm = Adw.AlertDialog(
-            heading="Ambiguous target",
+            heading="Test with fake credentials?",
             body=(
-                f"The current target ({window_desc}) doesn't match this account's known "
-                "app identifiers with high confidence. Test anyway with FAKE credentials "
-                "(never the real password/TOTP)?"
+                "ASH will hide for 5 seconds. Switch to the target app and click its "
+                "first login field. The test then types fake credentials into that "
+                "window and may submit the form. Your real password and authenticator "
+                "secret are never used."
             ),
         )
         confirm.add_response("cancel", "Cancel")
-        confirm.add_response("test", "Test with fake credentials")
+        confirm.add_response("test", "Start test in 5 seconds")
+        confirm.set_default_response("cancel")
+        confirm.set_close_response("cancel")
         confirm.set_response_appearance("test", Adw.ResponseAppearance.SUGGESTED)
+        self._test_running = True
 
         def on_response(_d, response):
-            if response != "test":
+            if response != "test" or not self._app.session.is_unlocked():
+                self._test_running = False
+                return
+            parent = self.get_root()
+            if not isinstance(parent, Gtk.Window):
+                self._test_running = False
+                self._test_result_label.set_text("Open the editor in a window before testing.")
                 return
             clipboard_fallback = self._app.settings.clipboard_fallback_enabled
             guard_mode = SafetyGuardMode(self._app.settings.safety_guard_mode)
-            self._test_result_label.set_text("Testing strategy…")
+            self._test_result_label.set_text("Switch to the target login field. Testing in 5 seconds…")
+            parent.set_visible(False)
+
+            def finish(result=None, error=None):
+                self._test_running = False
+                if not self._app.session.is_unlocked():
+                    return
+                if result is not None:
+                    self._render_test_result(result)
+                else:
+                    self._test_result_label.set_text("Unable to test the strategy. No further input was sent.")
+                parent.present()
 
             def work():
+                # Capture the target after the user has switched away,
+                # never while the editor/confirmation owns keyboard focus.
+                if not self._app.session.is_unlocked():
+                    return None
+                context = get_active_window_context()
+                if not context.app_id and not context.window_id:
+                    raise RuntimeError("target window unavailable")
                 backend = select_backend(
                     allow_clipboard_fallback=clipboard_fallback,
                     clipboard=self._app.session.clipboard,
@@ -438,9 +427,18 @@ class StrategyEditorDialog(Adw.Dialog):
                     app_identifiers=self._app_identifiers,
                     include_totp=self._account_has_totp,
                     confirmed=True,
+                    is_cancelled=lambda: not self._app.session.is_unlocked(),
+                    context_provider=get_active_window_context,
                 )
 
-            run_blocking_async(work, self._render_test_result)
+            def start_worker():
+                if not self._app.session.is_unlocked():
+                    self._test_running = False
+                    return False
+                run_blocking_async(work, finish, on_error=lambda error: finish(error=error))
+                return False
+
+            GLib.timeout_add(5000, start_worker)
 
         confirm.connect("response", on_response)
         confirm.present(self)

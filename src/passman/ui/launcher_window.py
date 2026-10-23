@@ -414,7 +414,7 @@ class AccountPickerWindow(Adw.ApplicationWindow):
         plain ``GLib.timeout_add`` callback -- it does no work of its
         own beyond starting the background login run, so it never blocks
         anything. Backend selection (an AT-SPI probe plus a possible
-        ``pgrep`` for ydotoold) and the strategy run itself (subprocess
+        socket probe for ydotoold) and the strategy run itself (subprocess
         calls, WAIT-step sleeps) both happen on a background thread via
         ``run_login_async`` -- never here, never on this thread."""
         allow_clipboard_fallback = self.app.settings.clipboard_fallback_enabled

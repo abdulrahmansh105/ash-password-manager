@@ -4,6 +4,8 @@ account data."""
 
 from __future__ import annotations
 
+import pytest
+
 from passman.core.auth.detection import Confidence, DetectedContext
 from passman.core.auth.engine import (
     GuardDecision,
@@ -172,6 +174,32 @@ def test_no_backend_available_reports_no_backend_not_silent_success():
     result = engine.run(account, DEFAULT_STRATEGY, context, SafetyGuardMode.AUTO_ON_HIGH_CONFIDENCE, confirmed=False)
 
     assert result.outcome == LoginOutcome.NO_BACKEND
+
+
+@pytest.mark.parametrize("next_window", ["0x222", None])
+def test_login_stops_before_password_when_same_app_window_changes_or_disappears(next_window):
+    backend = FakeBackend()
+    account = _fake_account()
+    context = DetectedContext("discord", "Login", "0x111")
+    contexts = iter([context, DetectedContext("discord", "Login", next_window)])
+    result = LoginEngine(backend).run(
+        account, DEFAULT_STRATEGY, context, SafetyGuardMode.AUTO_ON_HIGH_CONFIDENCE,
+        context_provider=lambda: next(contexts),
+    )
+    assert result.outcome is LoginOutcome.FAILED
+    assert backend.typed == [b"demo.user"] and backend.keys == []
+    assert not account.password
+
+
+def test_login_allows_title_changes_within_original_window():
+    backend = FakeBackend()
+    account = _fake_account()
+    result = LoginEngine(backend, sleep_fn=lambda _: None).run(
+        account, DEFAULT_STRATEGY, DetectedContext("discord", "Login", "0x111"),
+        SafetyGuardMode.AUTO_ON_HIGH_CONFIDENCE,
+        context_provider=lambda: DetectedContext("discord", "Enter code", "0x111"),
+    )
+    assert result.outcome is LoginOutcome.SUCCESS and len(backend.typed) == 3
 
 
 # -- disabled steps + on_step reporting (strategy editor support) -----------

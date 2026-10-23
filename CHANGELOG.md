@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.1
+
+- Restore the missing Auto-Type action in account details for the main multi-vault
+  manager. Confirm explicitly, hide ASH, and allow five seconds to select the target
+  login field before running the saved strategy with real credentials.
+- Fix Test Strategy targeting its own editor: confirm fake input, hide the owning
+  window, and detect the target after the same five-second handoff.
+- Stop real and test input when the session locks or focus moves to another window,
+  including a second window of the same application. Keep worker errors generic,
+  wipe account secrets on completion, and prevent duplicate starts.
+- Probe ydotool's actual local socket without sending input, respecting
+  `YDOTOOL_SOCKET` and `XDG_RUNTIME_DIR`; a daemon process alone no longer counts
+  as a usable backend.
+
 ## 0.4.0
 
 - Refresh every screen with shared rounded surfaces, consistent spacing, clearer headings,

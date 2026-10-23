@@ -5,6 +5,8 @@ still enforcing the real Safety Guard."""
 
 from __future__ import annotations
 
+import pytest
+
 from passman.core.auth.detection import Confidence, DetectedContext
 from passman.core.auth.engine import GuardDecision, LoginOutcome, SafetyGuardMode
 from passman.core.auth.strategy import DEFAULT_STRATEGY
@@ -36,6 +38,20 @@ class RecordingBackend(AuthInputBackend):
 
     def press_combo(self, combo: str) -> BackendOutcome:
         return BackendOutcome(InputResult.OK)
+
+
+@pytest.mark.parametrize("locked", [True, False])
+def test_test_run_stops_on_lock_or_window_switch(locked):
+    backend = RecordingBackend()
+    context = DetectedContext("example", "Login", "0x111")
+    result = run_test(
+        backend, DEFAULT_STRATEGY, context, SafetyGuardMode.ALWAYS_CONFIRM,
+        entry_uuid="fake", display_name="Fake", service_name="Fake", app_identifiers=(),
+        include_totp=True, confirmed=True, sleep_fn=lambda _: None,
+        is_cancelled=lambda: locked,
+        context_provider=lambda: DetectedContext("example", "Other", "0x222"),
+    )
+    assert result.outcome is LoginOutcome.FAILED and backend.typed == []
 
 
 def test_build_fake_secrets_never_uses_real_values():

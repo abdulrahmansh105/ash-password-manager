@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from passman.input.backend import InputResult
 from passman.input.clipboard_backend import ClipboardPasteBackend
 from passman.input.ydotool_backend import YdotoolBackend
@@ -84,6 +86,68 @@ def test_ydotool_unavailable_when_binary_missing(monkeypatch):
     monkeypatch.setattr("passman.input.ydotool_backend.shutil.which", lambda _n: None)
     backend = YdotoolBackend()
     assert backend.is_available() is False
+
+
+@pytest.mark.parametrize(
+    "custom,runtime,expected",
+    [
+        ("/custom/socket", "/run/user/test", "/custom/socket"),
+        (None, "/run/user/test", "/run/user/test/.ydotool_socket"),
+        (None, None, "/tmp/.ydotool_socket"),
+    ],
+)
+def test_ydotool_probes_client_socket_without_sending_input(monkeypatch, custom, runtime, expected):
+    import passman.input.ydotool_backend as mod
+
+    for name, value in (("YDOTOOL_SOCKET", custom), ("XDG_RUNTIME_DIR", runtime)):
+        monkeypatch.delenv(name, raising=False)
+        if value is not None:
+            monkeypatch.setenv(name, value)
+    connected, closed = [], []
+
+    class Probe:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            closed.append(True)
+
+        def settimeout(self, value):
+            assert 0 < value <= 2
+
+        def connect(self, path):
+            connected.append(path)
+
+    def socket(family, kind):
+        assert family == mod.socket.AF_UNIX and kind == mod.socket.SOCK_DGRAM
+        return Probe()  # deliberately has no send/write method
+
+    monkeypatch.setattr(mod.shutil, "which", lambda _: "/usr/bin/ydotool")
+    monkeypatch.setattr(mod.socket, "socket", socket)
+    assert YdotoolBackend().is_available()
+    assert connected == [expected] and closed == [True]
+
+
+@pytest.mark.parametrize("error", [FileNotFoundError, PermissionError, ConnectionRefusedError, TimeoutError])
+def test_ydotool_unavailable_when_socket_unreachable(monkeypatch, error):
+    import passman.input.ydotool_backend as mod
+
+    class Probe:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def settimeout(self, value):
+            pass
+
+        def connect(self, path):
+            raise error("synthetic socket failure")
+
+    monkeypatch.setattr(mod.shutil, "which", lambda _: "/usr/bin/ydotool")
+    monkeypatch.setattr(mod.socket, "socket", lambda *args: Probe())
+    assert not YdotoolBackend().is_available()
 
 
 def test_clipboard_backend_never_available_when_wl_copy_missing(monkeypatch):

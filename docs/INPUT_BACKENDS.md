@@ -61,7 +61,32 @@ ash-password-manager doctor
 ```
 
 reports which backend is currently available (never requires typing
-anything to check). Real end-to-end behavior against your actual target
-apps (Discord, GitHub, Google, Steam, ...) needs your live Hyprland
-session -- untested in this development environment, which has no
-display (see `docs/THREAT_MODEL.md`).
+anything to check). The ydotool check connects to the same local datagram
+socket as its client, without sending events: `YDOTOOL_SOCKET` takes precedence,
+then `$XDG_RUNTIME_DIR/.ydotool_socket`, then `/tmp/.ydotool_socket` when no
+runtime directory is set. A missing, stale, or inaccessible socket reports
+unavailable even if a daemon process exists.
+
+In the manager, open an account, then **Authentication Flow → Auto-Type**.
+Confirm the real-credential action, switch to the intended application during
+the five-second delay, and click its first login field. The saved strategy runs
+only after that handoff. A completed sequence reports input delivery, not proof
+that the website accepted the login.
+
+To check navigation first, open **Edit Auto-Type Strategy → Test Strategy**.
+Confirm the fake-credential test and select the target field during the same
+delay. The test never reads the account's real credentials. A login strategy
+can submit the fake form, so use a disposable target when possible.
+
+Both actions require readable target-window information and stop if the session
+locks or the detected target changes. On Hyprland, the compositor window address
+distinguishes two windows of the same application. Titles may change during a
+multi-page login without stopping the run. This does not verify browser URL/tab
+identity or recall input already sent by a backend.
+
+The automated tests cover target handoff, fake versus real-account execution
+using fabricated credentials, cancellation, duplicate starts, backend failures,
+and secret cleanup. Real end-to-end behavior against your actual target apps
+(Discord, GitHub, Google, Steam, ...) still requires a live Hyprland session.
+The October 24 check could not access the desktop/input sockets from its restricted
+execution environment; live keystroke delivery was not verified.

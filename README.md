@@ -35,7 +35,16 @@ The public source and package ship no `Passwords.kdbx`, no `Key.key`,
 no key slots, and no Local Key. You create your own vault, on your own
 USB, during first-time setup -- see [Sign in](#sign-in--first-time-setup) below.
 
-## Updates in 0.3.0
+## Updates in 0.4.1
+
+Auto-Type is available from an account's **Authentication Flow → Auto-Type** action.
+After confirmation, ASH hides for five seconds so you can select the target login
+field. The strategy editor's **Test Strategy** action uses the same handoff with
+fake credentials. Input stops on session lock or a change of target window.
+ydotool availability now checks the actual input socket. See
+[input backends](docs/INPUT_BACKENDS.md) for setup and verification limits.
+
+### Earlier updates in 0.3.0
 
 Recoverable encrypted backups, safer vault saves with stale-writer checks,
 stronger Auto-Type confirmation and cancellation, and editable website URLs

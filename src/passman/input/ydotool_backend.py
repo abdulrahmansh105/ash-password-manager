@@ -16,7 +16,9 @@ integer namespace all synthetic Wayland input tools already share.
 
 from __future__ import annotations
 
+import os
 import shutil
+import socket
 import subprocess
 import time
 
@@ -55,14 +57,18 @@ class YdotoolBackend(AuthInputBackend):
         if shutil.which("ydotool") is None:
             return False
         try:
-            # `ydotool` talks to `ydotoold` over a unix socket; a no-op
-            # key-list call is not available, so we just check the
-            # daemon socket exists rather than sending any input.
-            result = subprocess.run(
-                ["pgrep", "-x", "ydotoold"], capture_output=True, timeout=2, check=False
-            )
-            return result.returncode == 0
-        except (subprocess.SubprocessError, OSError):
+            # Match the client's socket resolution. A process name does
+            # not prove this user can reach the daemon (or see its PID).
+            # Connecting a datagram socket sends no keyboard events.
+            path = os.environ.get("YDOTOOL_SOCKET")
+            if path is None:
+                runtime = os.environ.get("XDG_RUNTIME_DIR")
+                path = f"{runtime}/.ydotool_socket" if runtime is not None else "/tmp/.ydotool_socket"
+            with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as probe:
+                probe.settimeout(1)
+                probe.connect(path)
+            return True
+        except (OSError, ValueError):
             return False
 
     def type_text(self, secret: bytes) -> BackendOutcome:

@@ -114,10 +114,12 @@ class LoginEngine:
                     continue
                 if is_cancelled is not None and is_cancelled():
                     return LoginResult(LoginOutcome.FAILED, "login cancelled because the session locked")
-                if context_provider is not None and context.app_id:
+                if context_provider is not None and (context.app_id or context.window_id):
                     current = context_provider()
-                    if current.app_id != context.app_id:
-                        return LoginResult(LoginOutcome.FAILED, "target application changed; login stopped")
+                    if (context.app_id and current.app_id != context.app_id) or (
+                        context.window_id and current.window_id != context.window_id
+                    ):
+                        return LoginResult(LoginOutcome.FAILED, "target window changed; login stopped")
                 if step.action == StepAction.WAIT and is_cancelled is not None:
                     remaining = max(0, int(step.value or "0")) / 1000.0
                     while remaining > 0:

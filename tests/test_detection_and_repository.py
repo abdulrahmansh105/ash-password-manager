@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
+import pytest
+
 from passman.core.accounts.repository import (
     rank_by_context,
     search,
@@ -7,6 +12,17 @@ from passman.core.accounts.repository import (
 )
 from passman.core.auth.detection import Confidence, DetectedContext, match_confidence
 from passman.core.vault.models import AccountSummary
+
+
+@pytest.mark.parametrize("address,expected", [("0x123", "0x123"), (None, None), (42, None), ("", None)])
+def test_detection_captures_window_address(monkeypatch, address, expected):
+    from passman.core.auth import detection
+
+    monkeypatch.setattr(detection.shutil, "which", lambda _: "/usr/bin/hyprctl")
+    monkeypatch.setattr(detection.subprocess, "run", lambda *a, **kw: SimpleNamespace(
+        stdout=json.dumps({"class": "example", "title": "Login", "address": address}).encode()
+    ))
+    assert detection.get_active_window_context() == DetectedContext("example", "Login", expected)
 
 
 def _acc(uuid: str, name: str, service: str) -> AccountSummary:

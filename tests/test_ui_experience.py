@@ -116,6 +116,7 @@ def test_login_disables_duplicate_submit_and_recovers_from_worker_error(ui_app, 
 def test_detail_copy_uses_session_clipboard_and_password_can_be_hidden_early(ui_app):
     from passman.ui.account_detail import AccountDetailDialog
     dialog = AccountDetailDialog(ui_app, "one", lambda: None)
+    assert dialog._autotype_btn.get_label() == "Auto-Type"
     dialog._copy_field("password")
     assert ui_app.copied == [("synthetic-only", 30)]
     dialog._on_reveal_password(dialog._reveal_pw_btn)
