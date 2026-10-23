@@ -78,7 +78,7 @@ class AccountDetailDialog(Adw.Dialog):
         self._autotype_btn = Gtk.Button(label="Auto-Type", hexpand=True)
         self._autotype_btn.connect("clicked", self._on_autotype)
         auth_flow_group.add(self._autotype_btn)
-        edit_strategy_btn = Gtk.Button(label="Edit Auto-Type Strategy", hexpand=True)
+        edit_strategy_btn = Gtk.Button(label="Edit Auto-Type Strategy", hexpand=True, margin_top=8)
         edit_strategy_btn.connect(
             "clicked",
             lambda _b: StrategyEditorDialog(
