@@ -10,7 +10,7 @@ uses ``Gtk.Revealer``/eased transitions).
 
 Full sign-in execution never runs on this (GTK main) thread -- see
 ``core.auth.async_login`` for why and how; this window only ever hands
-work off to ``run_login_async`` and receives a result back via a
+work off to the shared Auto-Type controller and receives a result via a
 callback GLib has already marshalled onto the main thread.
 """
 
@@ -25,26 +25,13 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, GLib, Gtk
 
 from ..core.accounts.repository import rank_by_context, search, suggested_and_other
-from ..core.auth.async_login import run_login_async
-from ..core.auth.detection import get_active_window_context
-from ..core.auth.engine import (
-    GuardDecision,
-    LoginOutcome,
-    SafetyGuardMode,
-    confidence_for_account,
-    evaluate_safety_guard,
-)
-from ..core.auth.strategy import AuthStrategy
-from ..core.security.logging import get_logger, safe_extra
 from ..core.vault.models import AccountSummary
-from ..input import select_backend
 from .account_detail import AccountDetailDialog
+from .autotype import request_autotype
 from .entry_editor import EntryEditorDialog, TotpSetupDialog
 from .generator_view import GeneratorDialog
 from .settings_window import SettingsDialog
 from .widgets import style_window
-
-_log = get_logger(__name__)
 
 _ICON_SIZE = 28
 
@@ -357,106 +344,7 @@ class AccountPickerWindow(Adw.ApplicationWindow):
     # -- account activation / Safety Guard -------------------------------
 
     def _on_account_activated(self, summary: AccountSummary) -> None:
-        vault = self.app.session.vault()
-        secrets = vault.get_account_secrets(summary.entry_uuid)
-        strategy = AuthStrategy.from_json(secrets.auth_strategy_json)
-        context = self.app.detected_context
-        guard_mode = SafetyGuardMode(self.app.settings.safety_guard_mode)
-
-        # Decide *before* typing anything -- separate from the async
-        # login run specifically so a CONFIRM_REQUIRED decision never
-        # has to hide this window first (see _hide_and_execute's
-        # docstring for why hiding matters once we do proceed to type).
-        confidence = confidence_for_account(context, secrets)
-        decision = evaluate_safety_guard(guard_mode, confidence)
-        if decision == GuardDecision.CONFIRM_REQUIRED:
-            secrets.wipe()
-            self._show_confirmation(summary, context)
-            return
-
-        self._hide_and_execute(secrets, strategy, context, guard_mode, confirmed=True)
-
-    def _show_confirmation(self, summary: AccountSummary, context) -> None:
-        window_desc = context.app_id or context.window_title or "the current window"
-        self._confirm_bar.set_title(f"Sign in to {summary.display_name} in {window_desc}?")
-        self._confirm_bar.set_button_label("Proceed")
-        self._confirm_bar.set_revealed(True)
-
-        def on_confirm(_b):
-            self._confirm_bar.set_revealed(False)
-            self._run_confirmed(summary)
-
-        # Adw.Banner only supports one button; disconnect any previous handler.
-        if hasattr(self, "_confirm_handler_id") and self._confirm_handler_id:
-            self._confirm_bar.disconnect(self._confirm_handler_id)
-        self._confirm_handler_id = self._confirm_bar.connect("button-clicked", on_confirm)
-
-    def _run_confirmed(self, summary: AccountSummary) -> None:
-        vault = self.app.session.vault()
-        secrets = vault.get_account_secrets(summary.entry_uuid)
-        strategy = AuthStrategy.from_json(secrets.auth_strategy_json)
-        context = self.app.detected_context
-        guard_mode = SafetyGuardMode(self.app.settings.safety_guard_mode)
-        self._hide_and_execute(secrets, strategy, context, guard_mode, confirmed=True)
-
-    def _hide_and_execute(self, secrets, strategy, context, guard_mode, confirmed: bool) -> None:
-        """Hide this window and give the compositor a moment to restore
-        focus to whatever was focused before the picker took it, THEN
-        type -- discovered live (not by unit tests, which never exercise
-        real window focus at all) that without this step, autotype would
-        type into the picker's own window, since that's what actually
-        has keyboard focus at the moment the user clicks an account tile.
-        ``confirmed`` is always True here: the Safety Guard decision was
-        already made in ``_on_account_activated``/before showing the
-        confirmation banner -- this method never re-decides it.
-
-        The 250ms delay below is the only thing that still runs as a
-        plain ``GLib.timeout_add`` callback -- it does no work of its
-        own beyond starting the background login run, so it never blocks
-        anything. Backend selection (an AT-SPI probe plus a possible
-        socket probe for ydotoold) and the strategy run itself (subprocess
-        calls, WAIT-step sleeps) both happen on a background thread via
-        ``run_login_async`` -- never here, never on this thread."""
-        allow_clipboard_fallback = self.app.settings.clipboard_fallback_enabled
-        self._toast_overlay.add_toast(Adw.Toast(title="Signing in…", timeout=2))
-        self.set_visible(False)
-
-        def start_worker() -> bool:
-            run_login_async(
-                lambda: select_backend(
-                    allow_clipboard_fallback=allow_clipboard_fallback,
-                    clipboard=self.app.session.clipboard,
-                    clear_after_seconds=self.app.settings.clipboard_timeout_seconds(),
-                ),
-                secrets,
-                strategy,
-                context,
-                guard_mode,
-                confirmed,
-                on_done=self._on_login_finished,
-                is_cancelled=lambda: not self.app.session.is_unlocked(),
-                context_provider=get_active_window_context,
-            )
-            return False
-
-        GLib.timeout_add(250, start_worker)
-
-    def _on_login_finished(self, result) -> None:
-        if not self.app.session.is_unlocked():
-            return
-        self.set_visible(True)
-        self.present()
-        self._report_login_result(result)
-
-    def _report_login_result(self, result) -> None:
-        messages = {
-            LoginOutcome.SUCCESS: "Signed in",
-            LoginOutcome.FAILED: "Unable to complete sign-in automatically.",
-            LoginOutcome.NO_BACKEND: "No input method available. Enable ydotoold or AT-SPI.",
-            LoginOutcome.NEEDS_CONFIRMATION: "Confirmation required.",
-        }
-        _log.info("login attempt finished", extra=safe_extra(event="login_result", outcome=result.outcome.value))
-        self._toast_overlay.add_toast(Adw.Toast(title=messages.get(result.outcome, "Done.")))
+        request_autotype(self.app, self, summary.entry_uuid, summary.display_name)
 
     # -- toolbar actions --------------------------------------------------
 

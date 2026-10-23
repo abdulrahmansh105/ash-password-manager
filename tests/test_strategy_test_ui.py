@@ -8,16 +8,14 @@ from passman.core.auth.detection import DetectedContext
 from passman.core.auth.engine import LoginOutcome
 
 
-@pytest.fixture(params=["test", "account"])
-def test_editor(monkeypatch, request):
-    from passman.ui import account_detail, strategy_editor
+@pytest.fixture
+def test_editor(monkeypatch):
+    from passman.ui import strategy_editor as mod
     from passman.config.store import Settings
     from passman.core.auth.strategy import PASSWORD_ONLY_STRATEGY
     from passman.core.auth.test_run import build_fake_secrets
     from passman.input.backend import BackendOutcome, InputResult
 
-    mod = strategy_editor if request.param == "test" else account_detail
-    flag = "_test_running" if request.param == "test" else "_autotype_running"
     events, timers, jobs, alerts, typed = [], [], [], [], []
     issued = []
     state = SimpleNamespace(unlocked=True, context=DetectedContext("example", "Login", "0x111"))
@@ -77,7 +75,6 @@ def test_editor(monkeypatch, request):
     monkeypatch.setattr(mod, "get_active_window_context", get_context)
     editor = SimpleNamespace(
         _test_running=False,
-        _autotype_running=False,
         _app=SimpleNamespace(settings=Settings(), session=SimpleNamespace(is_unlocked=lambda: state.unlocked, clipboard=object(), vault=lambda: SimpleNamespace(get_account_secrets=read_account))),
         _steps=PASSWORD_ONLY_STRATEGY.steps, _strategy_name="password_only",
         _entry_uuid="fake", _display_name="Fake", _service_name="Fake", _app_identifiers=(),
@@ -86,13 +83,13 @@ def test_editor(monkeypatch, request):
         _render_test_result=lambda result: events.append(result.outcome),
         _toast=SimpleNamespace(add_toast=events.append),
     )
-    invoke = mod.StrategyEditorDialog._on_test_strategy if request.param == "test" else mod.AccountDetailDialog._on_autotype
+    invoke = mod.StrategyEditorDialog._on_test_strategy
     return SimpleNamespace(
         mod=mod, editor=editor, state=state, events=events, timers=timers,
         jobs=jobs, alerts=alerts, typed=typed, issued=issued,
-        invoke=lambda: invoke(editor, None), busy=lambda: getattr(editor, flag),
-        response="test" if request.param == "test" else "type",
-        success=LoginOutcome.SUCCESS if request.param == "test" else "Auto-Type sequence completed",
+        invoke=lambda: invoke(editor, None), busy=lambda: editor._test_running,
+        response="test",
+        success=LoginOutcome.SUCCESS,
     )
 
 

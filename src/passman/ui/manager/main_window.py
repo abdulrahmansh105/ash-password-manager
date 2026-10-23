@@ -1,21 +1,6 @@
-"""ASH Password Manager's main window (spec section 23): search,
-category sidebar, and the entry list -- the day-to-day password
-manager UI shown after a successful unlock.
-
-Deliberately separate from ``ui.launcher_window.AccountPickerWindow``,
-which remains the fast SUPER+CTRL+A autotype picker from the original
-design (spec section 34 decision: autotype stays a fully-working
-advanced feature, reachable from an entry's detail view and Settings
--> Authentication, never the primary Sign in/Login/Manager flow).
-
-Both windows share the same underlying vault/session/dialog machinery
--- ``AccountDetailDialog``, ``EntryEditorDialog``, ``GeneratorDialog``,
-``SettingsDialog``, ``core.accounts.repository`` -- none of it is
-duplicated here. This window is the one ``PasswordManagerApp`` opens
-when it was started through the new login flow (``ui.login`` passes
-``unlocked_vault=...``, see ``ui/app.py``); autotype for a given entry
-is one action away in ``AccountDetailDialog``'s "Authentication Flow"
-section, which already exists and is unchanged.
+"""Main vault manager: click an entry to confirm Auto-Type; use its
+details button to view/edit the account. Search, categories, and dialogs
+share the existing vault and session machinery with the legacy picker.
 """
 
 from __future__ import annotations
@@ -30,6 +15,7 @@ from ...core.accounts.repository import search as search_accounts
 from ...core.security.session import LockReason
 from ...core.vault.models import CATEGORY_LABELS
 from ..account_detail import AccountDetailDialog
+from ..autotype import request_autotype
 from ..entry_editor import EntryEditorDialog
 from ..generator_view import GeneratorDialog
 from ..settings_window import SettingsDialog
@@ -47,7 +33,7 @@ _CATEGORY_ICONS = {
 
 
 class _EntryRow(Adw.ActionRow):
-    def __init__(self, summary) -> None:
+    def __init__(self, summary, on_details) -> None:
         super().__init__(
             title=GLib.markup_escape_text(summary.display_name),
             subtitle=GLib.markup_escape_text(summary.service_name or ""),
@@ -65,9 +51,10 @@ class _EntryRow(Adw.ActionRow):
             badge = Gtk.Image.new_from_icon_name("channel-secure-symbolic")
             badge.set_tooltip_text("Authenticator configured")
             self.add_suffix(badge)
-        chevron = Gtk.Image.new_from_icon_name("go-next-symbolic")
-        chevron.add_css_class("dim-label")
-        self.add_suffix(chevron)
+        details = icon_button("dialog-information-symbolic", "Account details / edit", lambda _b: on_details(summary))
+        details.set_valign(Gtk.Align.CENTER)
+        self.add_suffix(details)
+        self.set_tooltip_text("Click to Auto-Type · details button to view or edit")
 
 
 class _CategoryRow(Adw.ActionRow):
@@ -203,7 +190,9 @@ class ManagerWindow(Adw.ApplicationWindow):
         label = Gtk.Label(label="Vault unlocked", xalign=0, hexpand=True)
         label.add_css_class("pm-hint-label")
         footer.append(label)
-        hint = Gtk.Label(label="Ctrl+F  Search")
+        hint = Gtk.Label(label="Click entry: Auto-Type · ⓘ Details · Ctrl+F Search")
+        hint.set_wrap(True)
+        hint.set_xalign(1)
         hint.add_css_class("pm-hint-label")
         footer.append(hint)
         box.append(footer)
@@ -264,7 +253,7 @@ class ManagerWindow(Adw.ApplicationWindow):
         while (child := self._entry_list.get_row_at_index(0)) is not None:
             self._entry_list.remove(child)
         for summary in matches:
-            self._entry_list.append(_EntryRow(summary))
+            self._entry_list.append(_EntryRow(summary, self._on_details))
 
         self._category_title.set_text(dict(_SIDEBAR_ITEMS)[self._selected_category])
         count = len(matches)
@@ -286,7 +275,10 @@ class ManagerWindow(Adw.ApplicationWindow):
     # -- actions -------------------------------------------------------------
 
     def _on_row_activated(self, _box, row: _EntryRow) -> None:
-        AccountDetailDialog(self.app, row.summary.entry_uuid, on_changed=self.refresh_accounts).present(self)
+        request_autotype(self.app, self, row.summary.entry_uuid, row.summary.display_name)
+
+    def _on_details(self, summary) -> None:
+        AccountDetailDialog(self.app, summary.entry_uuid, on_changed=self.refresh_accounts).present(self)
 
     def _on_add(self, _btn) -> None:
         EntryEditorDialog(self.app, on_saved=self.refresh_accounts).present(self)

@@ -19,7 +19,7 @@ changes presentation and interaction without changing the vault format.
 | Setup | Named steps, visible progress, USB icon/list, prominent permission errors, disabled Continue without a drive, password guidance and Enter submission |
 | Login | Vault identity, clearer unlock action, busy feedback, duplicate submission guard, worker error recovery and asynchronous database opening |
 | Locked | Consistent brand styling and clear USB instruction |
-| Manager | Adaptive category sidebar, counts, prominent Add entry, search/results counts, distinct empty/category/search states, Ctrl+F/N/L and Enter to open first result |
+| Manager | Adaptive sidebar, category counts, search/empty states, Ctrl+F/N/L, entry click or Enter to confirm Auto-Type, separate information button for details/editing |
 | Quick sign-in | Separate heading/search, contextual instruction, keyboard hints and consistent row styling |
 | Account details | Clear identity and field rows, URL/notes display, explicit timed clipboard copy, TOTP copy, early password hiding and recovery confirmation retry |
 | Entry editor | Grouped introduction, consistent field spacing, persistent Save/Cancel actions and visible validation feedback |

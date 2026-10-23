@@ -14,6 +14,7 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from enum import Enum
 
@@ -29,6 +30,32 @@ class Confidence(Enum):
     HIGH = "high"
     LOW = "low"
     UNKNOWN = "unknown"
+
+
+def focus_target_window(context: DetectedContext) -> bool:
+    """Restore one compositor address and verify it before sending any input."""
+    address = context.window_id
+    if not address or not re.fullmatch(r"0x[0-9a-fA-F]+", address) or address == "0x0":
+        return False
+    try:
+        commands = [
+            ["hyprctl", "eval", f"hl.dispatch(hl.dsp.focus({{ window = 'address:{address}' }}))"],
+            ["hyprctl", "dispatch", "focuswindow", f"address:{address}"],
+        ]
+        for command in commands:
+            result = subprocess.run(command, capture_output=True, timeout=2, check=False)
+            if result.returncode != 0:
+                continue
+            for _ in range(10):
+                current = get_active_window_context()
+                if current.window_id == address and (
+                    not context.app_id or current.app_id == context.app_id
+                ):
+                    return True
+                time.sleep(0.05)
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return False
 
 
 def get_active_window_context() -> DetectedContext:

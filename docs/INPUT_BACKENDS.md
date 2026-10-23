@@ -67,15 +67,22 @@ then `$XDG_RUNTIME_DIR/.ydotool_socket`, then `/tmp/.ydotool_socket` when no
 runtime directory is set. A missing, stale, or inaccessible socket reports
 unavailable even if a daemon process exists.
 
-In the manager, open an account, then **Authentication Flow → Auto-Type**.
-Confirm the real-credential action, switch to the intended application during
-the five-second delay, and click its first login field. The saved strategy runs
-only after that handoff. A completed sequence reports input delivery, not proof
-that the website accepted the login.
+Focus the first field of the intended login form, then open ASH with your
+shortcut. **Click the entry → Yes** confirms Auto-Type. ASH hides, restores
+the remembered external window, verifies focus, and runs the saved strategy.
+The login window stays in front after success. Reopening an already-running
+manager refreshes the target window too. Cancel sends no input.
+
+The row's **ⓘ** button opens account details, editing, and the strategy editor.
+Details also retains **Authentication Flow → Auto-Type** as an alternative.
+If ASH has no remembered window, the confirmation explains a five-second
+handoff: switch to the login app and click its first field after choosing Yes.
+A completed sequence reports input delivery, not proof that a website accepted
+the login.
 
 To check navigation first, open **Edit Auto-Type Strategy → Test Strategy**.
-Confirm the fake-credential test and select the target field during the same
-delay. The test never reads the account's real credentials. A login strategy
+Confirm the fake-credential test and select the target field during its
+five-second delay. The test never reads the account's real credentials. A login strategy
 can submit the fake form, so use a disposable target when possible.
 
 Both actions require readable target-window information and stop if the session

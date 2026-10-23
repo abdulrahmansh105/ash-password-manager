@@ -13,6 +13,7 @@ memory.
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import gi
 
@@ -233,6 +234,7 @@ class PasswordManagerApp(Adw.Application):
             "ping": lambda _c: "pong",
             "lock": self._handle_lock_command,
             "focus": self._handle_focus_command,
+            "focus-target": self._handle_focus_target_command,
             "status": self._handle_status_command,
         }
         self._control = ControlServer(handlers)
@@ -248,6 +250,28 @@ class PasswordManagerApp(Adw.Application):
 
     def _handle_focus_command(self, _cmd: str) -> str:
         GLib.idle_add(self._present_window)
+        return "ok"
+
+    def _handle_focus_target_command(self, command: str) -> str:
+        try:
+            data = json.loads(command.partition(" ")[2])
+            if not isinstance(data, dict):
+                return "invalid_target"
+            app_id, window_id = data.get("app_id"), data.get("window_id")
+            if any(value is not None and not isinstance(value, str) for value in (app_id, window_id)):
+                return "invalid_target"
+            context = DetectedContext(app_id, None, window_id)
+        except (ValueError, TypeError):
+            return "invalid_target"
+
+        def update_and_present():
+            # Shortcut activation while ASH already has focus should not
+            # replace the external target with the manager's own window.
+            if not app_id or not app_id.startswith("dev.ash.PasswordManager"):
+                self.detected_context = context
+            return self._present_window()
+
+        GLib.idle_add(update_and_present)
         return "ok"
 
     def _present_window(self) -> bool:

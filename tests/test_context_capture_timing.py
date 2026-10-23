@@ -24,7 +24,7 @@ def test_run_show_captures_context_before_checking_ui_running():
         call_order.append("is_ui_running")
         return True
 
-    def fake_focus_existing():
+    def fake_focus_existing(context=None):
         call_order.append("focus_existing")
         return True
 

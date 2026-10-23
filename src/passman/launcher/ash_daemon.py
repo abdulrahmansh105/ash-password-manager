@@ -24,8 +24,10 @@ _log = get_logger(__name__)
 
 
 def run_sign_in_or_login() -> int:
+    # Capture before focusing even an already-running manager.
+    detected_context = get_active_window_context()
     if is_ui_running():
-        focus_existing()
+        focus_existing(detected_context)
         return 0
 
     # Best-effort, Hyprland-specific: none of this flow's windows
@@ -37,12 +39,6 @@ def run_sign_in_or_login() -> int:
     # which of this flow's several possible windows ends up shown.
     # Never blocks sign-in on failure -- a tiled window is cosmetic.
     hypr_keybind.ensure_windows_float()
-
-    # Captured before any window exists, exactly like the legacy
-    # run_show() -- see that function's docstring for why capturing it
-    # any later would only ever see this app's own picker/manager
-    # window and silently break suggestion ranking.
-    detected_context = get_active_window_context()
 
     vaults = load_vaults()
     if not vaults:

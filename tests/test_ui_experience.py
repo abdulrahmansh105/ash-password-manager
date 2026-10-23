@@ -55,6 +55,21 @@ def test_manager_counts_categories_and_distinguishes_search_from_empty(ui_app):
     assert window._category_list.get_row_at_index(0).count.get_text() == "0"
 
 
+def test_manager_entry_activation_confirms_autotype_and_details_stay_separate(ui_app, monkeypatch):
+    from passman.ui.manager import main_window as mod
+
+    calls = []
+    monkeypatch.setattr(mod, "request_autotype", lambda *args: calls.append(args))
+    window = mod.ManagerWindow(ui_app)
+    row = window._entry_list.get_row_at_index(0)
+    window._entry_list.emit("row-activated", row)
+    assert calls == [(ui_app, window, "one", "Example account")]
+    details = []
+    monkeypatch.setattr(mod, "AccountDetailDialog", lambda *a, **kw: SimpleNamespace(present=lambda owner: details.append(owner)))
+    window._on_details(row.summary)
+    assert details == [window] and len(calls) == 1
+
+
 @pytest.mark.parametrize("kind", ["entry", "detail", "generator", "totp", "recovery", "settings", "strategy", "picker", "locked"])
 def test_all_screens_construct_with_real_gtk(ui_app, kind):
     from passman.ui.account_detail import AccountDetailDialog

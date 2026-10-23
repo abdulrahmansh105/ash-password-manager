@@ -19,9 +19,10 @@ File content at any point -- it only ever handles USB *identity*
 from __future__ import annotations
 
 import sys
+import json
 
 from ..config.store import load_usb_registration
-from ..core.auth.detection import get_active_window_context
+from ..core.auth.detection import DetectedContext, get_active_window_context
 from ..integration.hyprland.keybind import register_runtime_bind
 from ..integration.usb.identity import UsbState, evaluate_usb_status
 from ..integration.usb.udisks import UdisksError, list_block_devices
@@ -35,7 +36,11 @@ def is_ui_running() -> bool:
     return send_command("ping") == "pong"
 
 
-def focus_existing() -> bool:
+def focus_existing(context: DetectedContext | None = None) -> bool:
+    if context is not None:
+        payload = json.dumps({"app_id": context.app_id, "window_id": context.window_id})
+        if send_command("focus-target " + payload) == "ok":
+            return True
     return send_command("focus") == "ok"
 
 
@@ -57,7 +62,7 @@ def run_show(argv: list[str] | None = None) -> int:
     detected_context = get_active_window_context()
 
     if is_ui_running():
-        if focus_existing():
+        if focus_existing(detected_context):
             return 0
 
     reg = load_usb_registration()

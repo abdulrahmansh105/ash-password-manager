@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.2
+
+- Clicking an entry (or pressing Enter on a search result) now opens a Yes/Cancel
+  Auto-Type confirmation. Account details and editing remain behind the row's
+  information button. The legacy picker uses the same confirmation.
+- Restore the remembered login window after Yes and verify focus before typing.
+  Refresh that target when a shortcut reopens an already-running manager; never
+  replace an external target with ASH itself. If there is no remembered target,
+  explain the five-second manual handoff in the confirmation.
+- Share execution across entry clicks and account-detail actions, prevent
+  duplicate runs, and leave the target application in front after success.
+
 ## 0.4.1
 
 - Restore the missing Auto-Type action in account details for the main multi-vault

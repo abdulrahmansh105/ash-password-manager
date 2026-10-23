@@ -114,7 +114,8 @@ class ControlServer:
                             break
                         data += chunk
                     command = data.decode("utf-8", errors="replace").strip()
-                    handler = self._handlers.get(command)
+                    key = "focus-target" if command.startswith("focus-target ") else command
+                    handler = self._handlers.get(key)
                     response = handler(command) if handler else "unknown_command"
                     conn.sendall(response.encode("utf-8"))
                 except (TimeoutError, OSError):
